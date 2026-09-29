@@ -67,8 +67,7 @@ section.empty>h2 .ax:has(+ .ax){margin-right:1mm}
 .item .meta dd.fig{text-wrap:balance;font-size:11pt;line-height:1.35;font-weight:700;color:var(--ink);margin:1mm -3mm 0;padding:1.4mm 3mm 1.2mm 2.4mm;background:#fff;box-shadow:inset 1.4mm 0 0 var(--cyan)}
 .item .meta dd.fig.nil{font-size:7.9pt;font-weight:400;color:var(--muted);background:none;box-shadow:none;margin:.6mm 0 0;padding:0}
 .item .meta dd.q{font-size:8pt;line-height:1.4;color:var(--body);margin:.8mm 0 0}
-.item h3,.item .orig,.item .trust,.item .sum,.item .src{grid-column:2}
-.item .trust{margin:0 0 2mm}.item .trust .tag:first-child{margin-left:0}
+.item h3,.item .orig,.item .sum,.item .src{grid-column:2}
 .item h3{font-size:12pt;margin:0 0 1mm;line-height:1.38;break-after:avoid}
 .item .orig{font-size:7.9pt;color:var(--muted);margin:0 0 2.2mm;line-height:1.4}
 .item .sum{margin:0;padding:0;list-style:none}
@@ -76,13 +75,10 @@ section.empty>h2 .ax:has(+ .ax){margin-right:1mm}
 .item .sum li:last-child{margin-bottom:0}
 .item .sum li::before{content:"";position:absolute;left:.3mm;top:.52em;width:1.8mm;height:1.8mm;border-radius:50%;background:var(--cyan)}
 .item .src{font-size:7.8pt;color:var(--muted);margin-top:2mm;line-height:1.5}
-.tag{display:inline-block;font-size:7.6pt;line-height:1.55;background:var(--panel);color:var(--ink);padding:0 2mm;border-radius:9mm;margin-left:1mm;white-space:nowrap}
-.tag.ok{background:var(--tint);color:var(--deep);font-weight:700}
 h4.tier{display:block;width:fit-content;font-size:8pt;color:var(--deep);background:var(--tint);border-radius:9mm;padding:.2mm 2.6mm;margin:0 0 2mm;font-weight:700;break-after:avoid;page-break-after:avoid}
 .ref{font-size:8.6pt;line-height:1.5;padding:2.2mm 3mm;margin-bottom:1.2mm;background:var(--panel);border-radius:var(--r);break-inside:avoid}
 .ref .t{display:block;font-size:9.4pt;font-weight:700;color:var(--ink);margin-bottom:.4mm}
 .ref .m{font-size:7.8pt;color:var(--muted);margin-top:.6mm}
-.ref .m .tag{background:#fff}
 .none{color:var(--muted);margin:0 0 2mm;font-size:8.8pt}
 section.srcs>h2{font-size:11pt}
 .sources{font-size:7.4pt;line-height:1.45;padding-left:5mm;margin:0;columns:2;column-gap:8mm;color:var(--body)}
@@ -104,9 +100,9 @@ sup{font-size:6.8pt;line-height:0}
   .item .meta dd.fig,.item .meta dd.q{justify-self:stretch}.item .meta dd.q{font-size:14px}
   .counts{display:block;overflow-x:auto;margin:2mm 0 0;width:100%}
   .item{display:flex;flex-direction:column}
-  .item h3{order:1}.item .orig{order:2}.item .trust{order:3}.item .meta{order:4;margin:0 0 3mm;align-self:stretch}.item .sum{order:5}.item .src{order:6}
+  .item h3{order:1}.item .orig{order:2}.item .meta{order:4;margin:0 0 3mm;align-self:stretch}.item .sum{order:5}.item .src{order:6}
   .sources{columns:1}
-  .item .meta,.item .meta dt.figl,.item .meta dd.fig.nil,.item .orig,.item .src,.ref .m,.tag,h4.tier,.key .s,section>h2 .cnt,.mast .sub,.mast dl,.sources{font-size:12px}
+  .item .meta,.item .meta dt.figl,.item .meta dd.fig.nil,.item .orig,.item .src,.ref .m,h4.tier,.key .s,section>h2 .cnt,.mast .sub,.mast dl,.sources{font-size:12px}
   .axn{font-size:12px}.mast .logo{height:20px}
   .item .meta dd.fig{font-size:16px}.ref{font-size:14px}.ref .t{font-size:15px}sup{font-size:11px}
 }
@@ -124,7 +120,7 @@ sup{font-size:6.8pt;line-height:0}
   <h2>오늘의 핵심</h2>
   <!-- 반복 .key × 최대 3. 핵심 0건이면 .key 대신 <p class="none">핵심 기준을 충족한 기사 없음</p>. href는 해당 .item의 id(k1~k3)와 맞춘다.
        .h: 해당 .item의 h3와 같은 헤드라인([후속]과 "(최초 보도 MM-DD)" 표기 포함).
-       .g: 대표 수치와 그 원문 단서(최대·목표·계획·추정·초안·~까지)를 담은 한 줄 사실, 명사형. 헤드라인에 있는 주체는 생략 가능. 단서와 "(당사자 발표)"는 길어져도 빼지 않는다. 수치가 없으면 핵심 사실 한 줄.
+       .g: 대표 수치와 그 원문 단서(최대·목표·계획·추정·초안·~까지)를 담은 한 줄 사실, 명사형. 헤드라인에 있는 주체는 생략 가능. 단서는 길어져도 빼지 않는다. 수치가 없으면 핵심 사실 한 줄.
        .s: 축 번호, 축 이름(축별 건수표 머리의 이름: 시장 지표, 정책·규제, 중고·잔존가치, 보험·금융, 데이터·진단), 권역, 최초 공개 시각(5절 기준, KST, MM-DD HH:MM) 순. 핵심 항목은 최초 공개 시각이 확인된 기사이므로 시각은 항상 채운다. -->
   <div class="key"><span class="n">{{1}}</span><span class="h"><a href="#{{k1}}">{{헤드라인}}</a></span><span class="s"><span class="axn">{{축 번호 1~5}}</span>{{축 이름}} · {{권역}} · {{MM-DD HH:MM}}</span><span class="g">{{대표 수치·원문 단서 한 줄}}</span></div>
   <table class="counts">
@@ -144,21 +140,19 @@ sup{font-size:6.8pt;line-height:0}
   <h2><span class="ax">{{1}}</span>{{EV·배터리 시장 지표}}<span class="cnt">핵심 {{n}} · 참고 {{n}}</span></h2>
   <!-- 반복 .item: 핵심 항목. 참고만 있는 축이면 <p class="none">핵심 항목 없음</p>. 오늘의 핵심에 오른 항목은 id="k1"~"k3", 나머지는 id를 두지 않는다 -->
   <article class="item" id="{{k1}}">
-    <!-- 수치 칸은 두 형식 중 하나. 수치가 있으면: <dd class="fig">값·단위 중심 14자 이내, 수치 하나. 범위를 한정하는 단서(최대·목표·초안·~까지)는 값 앞에 한두 단어로 넣는다(예: 목표 연간 5만 대)</dd><dd class="q">대상 설명, 기준 기간, 원문 단서, 당사자 발표 해당 시 (당사자 발표)</dd>. 단서·기준 기간·대상 설명이 모두 없을 때만 dd.q를 지운다.
+    <!-- 수치 칸은 두 형식 중 하나. 수치가 있으면: <dd class="fig">값·단위 중심 14자 이내, 수치 하나. 범위를 한정하는 단서(최대·목표·초안·~까지)는 값 앞에 한두 단어로 넣는다(예: 목표 연간 5만 대)</dd><dd class="q">대상 설명, 기준 기간, 원문 단서</dd>. 단서·기준 기간·대상 설명이 모두 없을 때만 dd.q를 지운다.
          수치가 없으면 dd.fig와 dd.q 대신 반드시 <dd class="fig nil">수치 없음</dd> (class="fig"에 "수치 없음"을 쓰지 않는다). -->
     <dl class="meta"><dt>주체</dt><dd>{{기관·기업}}</dd><dt class="figl">대표 수치</dt><dd class="fig">{{단서 + 값·단위}}</dd><dd class="q">{{대상 설명, 기준 기간, 원문 단서}}</dd></dl>
     <h3>{{[후속] 선택}} {{행위 명사로 끝낸 헤드라인}} {{해당 시 "(최초 보도 MM-DD)"}}</h3>
     <p class="orig">{{원문 제목}}</p>
-    <!-- 신뢰도 줄: 교차확인이 있으면 ok 태그, 당사자 발표면 중립 태그. 둘 다 없으면 이 줄 전체를 지운다. 경고성 표기는 리포트 어디에도 쓰지 않는다(목록은 지침 8절 8항, 세션 기록에만 적음) -->
-    <p class="trust">{{해당 시 <span class="tag ok">교차확인: 매체명</span>}}{{해당 시 <span class="tag">당사자 발표</span>}}</p>
     <!-- 요약은 문장 하나당 li 하나, 3~4개. 첫 li에 가장 중요한 사실(누가 무엇을)을 둔다. 각주는 마지막 li 끝에 -->
     <ul class="sum"><li>{{사실 1, 명사형 종결}}</li><li>{{사실 2}}</li><li>{{사실 3}}<sup><a href="{{기사 URL}}">[{{n}}]</a></sup></li></ul>
     <!-- ", 원출처 자료[n]" 부분은 기사가 발표·통계·법령을 보도한 경우에만 둔다. 매체 자체 취재·인터뷰 기사면 지우고, 역추적 대상인데 못 찾았으면 지운다. 한국 매체는 게재 시각을 KST 하나만 쓴다. -->
-    <div class="src">{{매체}}({{권역}}), 등급: {{원출처 또는 1등급}}, 게재 {{현지 시각}} ({{KST}}), 원출처 자료<sup><a href="{{원출처 URL}}">[{{n}}]</a></sup></div>
+    <div class="src">{{매체}}({{권역}}), 게재 {{현지 시각}} ({{KST}}), 원출처 자료<sup><a href="{{원출처 URL}}">[{{n}}]</a></sup></div>
   </article>
   <h4 class="tier">참고 {{n}}건</h4>
   <!-- 반복 .ref. 없으면 이 h4와 함께 생략 -->
-  <div class="ref"><span class="t">{{한국어 제목}}</span>{{한 줄 사실 요약 또는 "본문 미확인"}}<div class="m">{{매체}}, {{권역}}, {{MM-DD HH:MM KST}}<span class="tag">{{2등급}}</span> <sup><a href="{{URL}}">[{{n}}]</a></sup></div></div>
+  <div class="ref"><span class="t">{{한국어 제목}}</span>{{한 줄 사실 요약 또는 "본문 미확인"}}<div class="m">{{매체}}, {{권역}}, {{MM-DD HH:MM KST}} <sup><a href="{{URL}}">[{{n}}]</a></sup></div></div>
 </section>
 
 <section class="srcs">
