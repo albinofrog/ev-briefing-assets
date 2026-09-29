@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>EV 시장·정책 브리핑 {{YYYY-MM-DD}}</title>
+<link rel="preload" as="image" href="file:///tmp/ev_fonts/bonce.png">
+<style>
+@font-face{font-family:"EVLatin";src:url("file:///tmp/ev_fonts/arialn.woff2") format("woff2"),url("https://raw.githubusercontent.com/albinofrog/ev-briefing-assets/main/fonts/arialn.woff2") format("woff2");font-weight:400;unicode-range:U+0000-024F,U+2000-206F,U+20A0-20CF,U+2100-214F,U+2190-21FF}
+@font-face{font-family:"EVKorean";src:url("file:///tmp/ev_fonts/lgsmart.woff2") format("woff2"),url("https://raw.githubusercontent.com/albinofrog/ev-briefing-assets/main/fonts/lgsmart.woff2") format("woff2");font-weight:400;unicode-range:U+1100-11FF,U+3000-303F,U+3130-318F,U+A960-A97F,U+AC00-D7A3,U+D7B0-D7FF}
+@page{size:A4;margin:20mm 16mm 18mm;
+  @top-left{content:"EV 시장·정책 브리핑";width:34.6mm;padding-left:17.4mm;background:url("file:///tmp/ev_fonts/bonce.png");background-repeat:no-repeat;background-position:left 0 bottom 2.6mm;background-size:auto 3mm;white-space:nowrap;font-size:8pt;font-weight:700;font-family:"EVLatin","EVKorean",sans-serif;color:#0A6F8F;vertical-align:bottom;padding-bottom:2.2mm;border-bottom:.8mm solid #24C0EB;margin-bottom:4mm}
+  @top-right{content:"제{{NNN}}호   {{YYYY-MM-DD}}";width:126mm;text-align:right;font-size:8pt;font-family:"EVLatin","EVKorean",sans-serif;color:#5F6D75;vertical-align:bottom;padding-bottom:2.75mm;border-bottom:.25mm solid #D3DADE;margin-bottom:4mm}
+  @bottom-left{content:"EV 시장·정책 브리핑  제{{NNN}}호  {{YYYY-MM-DD}}";width:150mm;font-size:7.4pt;font-family:"EVLatin","EVKorean",sans-serif;color:#5F6D75;vertical-align:top;padding-top:2.55mm;border-top:.25mm solid #D3DADE;margin-top:4mm}
+  @bottom-right{content:counter(page) " / " counter(pages);width:28mm;text-align:right;font-size:8pt;font-weight:700;font-family:"EVLatin","EVKorean",sans-serif;color:#0A6F8F;vertical-align:top;padding-top:2mm;border-top:.8mm solid #24C0EB;margin-top:4mm}}
+@page:first{margin-top:14mm;@top-left{content:none;border:0}@top-right{content:none;border:0}}
+:root{--ink:#0F1B22;--body:#34434C;--muted:#5F6D75;--cyan:#24C0EB;--deep:#0A6F8F;--tint:#E4F6FC;--mid:#BDEBF9;--panel:#F3F6F7;--line:#D3DADE;--r:1.6mm;--f:"EVLatin","EVKorean","Noto Sans CJK KR","Noto Sans CJK SC","Noto Sans CJK JP",sans-serif}
+*{box-sizing:border-box}html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{margin:0;color:var(--body);background:#fff;font-family:var(--f);font-size:9.4pt;line-height:1.62;word-break:keep-all;overflow-wrap:anywhere;orphans:3;widows:3;font-variant-numeric:tabular-nums}
+a{color:var(--deep);text-decoration:none}
+h1,h2,h3,h4{color:var(--ink);font-weight:700}
+.mast{display:grid;grid-template-columns:1fr auto;column-gap:8mm;align-items:stretch}
+.mast>div{position:relative;padding:5mm 0 4mm 6mm}
+.mast>div::before{content:"";position:absolute;left:0;top:5mm;bottom:4mm;width:1.6mm;background:var(--cyan);border-radius:.8mm}
+.mast h1{font-size:24pt;margin:0;line-height:1.1;letter-spacing:-.01em}
+.mast .logo{display:block;height:4.6mm;width:auto;margin:0 0 2.4mm}
+.mast .sub{font-size:8.6pt;color:var(--muted);margin-top:2mm}
+.mast dl{margin:0;display:grid;grid-template-columns:auto auto;align-content:center;gap:.6mm 5mm;font-size:8.2pt;line-height:1.45;white-space:nowrap;background:var(--tint);border-radius:var(--r);padding:3mm 4mm}
+.mast dt{color:var(--deep)}.mast dd{margin:0;text-align:right;color:var(--ink)}
+.box{margin-top:6mm;break-inside:avoid;background:var(--tint);border-radius:var(--r);padding:4.5mm 5mm 4mm}
+.box h2{font-size:13.5pt;margin:0 0 3mm;color:var(--ink);display:flex;align-items:center;gap:2mm}
+.key{display:grid;grid-template-columns:9mm 1fr auto;column-gap:3mm;align-items:start;padding:2.6mm 3mm;margin-bottom:1.6mm;background:#fff;border-radius:var(--r)}
+.key .n{grid-row:1 / span 2;width:8mm;height:8mm;border-radius:50%;background:var(--cyan);color:#fff;font-size:13pt;line-height:8mm;text-align:center;font-weight:700}
+.key .h{font-size:11.4pt;line-height:1.42;color:var(--ink);font-weight:700;padding-top:.3mm}
+.key .h a{color:inherit}
+.key .s{font-size:7.4pt;color:var(--deep);background:var(--tint);border-radius:9mm;padding:.2mm 2mm .2mm .4mm;white-space:nowrap;margin-top:.8mm}
+.axn{display:inline-block;width:4.2mm;height:4.2mm;margin-right:1mm;border-radius:1mm;background:var(--cyan);color:#fff;font-size:8pt;font-weight:700;line-height:4.2mm;text-align:center;vertical-align:middle}
+.key .g{grid-column:2 / span 2;justify-self:start;font-size:9.6pt;line-height:1.5;color:var(--ink);background:var(--tint);border-radius:1mm;padding:.6mm 2mm;margin-top:1.2mm}
+.box>.none{padding:2.6mm 3mm;background:#fff;border-radius:var(--r)}
+.counts{width:100%;border-collapse:separate;border-spacing:1.2mm;margin:2mm -1.2mm 0;width:calc(100% + 2.4mm);font-size:8pt;table-layout:fixed}
+.counts th,.counts td{padding:1.2mm 1.5mm;text-align:center;border-radius:1mm}
+.counts thead th{color:var(--deep);font-weight:400;line-height:1.35;vertical-align:bottom;padding-bottom:.4mm}
+.counts thead th:first-child,.counts tbody th{text-align:left;width:17mm;color:var(--deep);font-weight:400}
+.counts td{font-size:9pt;color:var(--ink);background:#fff;font-weight:700}
+.counts td.z{color:var(--muted);background:#fff;font-weight:400}
+.counts td.sum,.counts th.sum{font-weight:700}
+.counts td.sum{background:var(--mid);color:var(--ink)}
+section{margin-top:6mm}
+section:not(.empty)>h2{padding-top:6mm;background:linear-gradient(var(--cyan),var(--cyan)) 0 0/24mm .8mm no-repeat,linear-gradient(var(--line),var(--line)) 0 0/100% .25mm no-repeat}
+section>h2{display:flex;align-items:center;font-size:15pt;margin:0 0 4mm;break-after:avoid;page-break-after:avoid}
+section>h2 .ax{flex:none;width:8mm;height:8mm;margin-right:2.5mm;border-radius:var(--r);background:var(--cyan);color:#fff;font-size:13pt;font-weight:700;line-height:8mm;text-align:center}
+section>h2 .cnt{margin-left:auto;font-size:7.8pt;font-weight:400;color:var(--deep);background:var(--tint);border-radius:9mm;padding:.4mm 2.4mm;white-space:nowrap}
+section.empty{margin-top:2.5mm}
+section.empty>h2{font-size:10pt;font-weight:400;color:var(--muted);margin:0;padding:1.4mm 2mm;background:var(--panel);border-radius:var(--r)}
+section.empty>h2 .ax{width:5.5mm;height:5.5mm;line-height:5.5mm;font-size:8.5pt;background:#DDE4E7;color:var(--body);border-radius:1mm}
+section.empty>h2 .cnt{background:none;color:var(--muted)}
+section.empty>h2 .ax:has(+ .ax){margin-right:1mm}
+.item{display:grid;grid-template-columns:34mm 1fr;grid-template-rows:repeat(4,auto) 1fr;column-gap:5mm;margin-bottom:4mm;padding-bottom:5.2mm;background:linear-gradient(var(--panel),var(--panel)) 0 100%/100% 1.2mm no-repeat;break-inside:avoid-page}
+.item:last-child{background:none;padding-bottom:0}
+.item .meta{grid-column:1;grid-row:1 / -1;align-self:start;margin:0;font-size:7.9pt;line-height:1.45;background:var(--panel);border-radius:var(--r);padding:3mm}
+.item .meta dt{color:var(--muted)}
+.item .meta dt:not(.figl){float:left;clear:left;margin:1.4mm 1.5mm 0 0}.item .meta dt:first-child{margin-top:0}
+.item .meta dd{margin:1.4mm 0 0;color:var(--ink);overflow:hidden}.item .meta dd:first-of-type{margin-top:0}
+.item .meta dt.figl,.item .meta dd.fig,.item .meta dd.q{clear:left}
+.item .meta dt.figl{display:inline-block;margin-top:2mm;padding:.3mm 2mm;border-radius:9mm;background:var(--cyan);color:#fff;font-size:8pt;font-weight:700}
+.item .meta dt.figl:first-child{margin-top:0}
+.item .meta dd.fig{text-wrap:balance;font-size:11pt;line-height:1.35;font-weight:700;color:var(--ink);margin:1mm -3mm 0;padding:1.4mm 3mm 1.2mm 2.4mm;background:#fff;box-shadow:inset 1.4mm 0 0 var(--cyan)}
+.item .meta dd.fig.nil{font-size:7.9pt;font-weight:400;color:var(--muted);background:none;box-shadow:none;margin:.6mm 0 0;padding:0}
+.item .meta dd.q{font-size:8pt;line-height:1.4;color:var(--body);margin:.8mm 0 0}
+.item h3,.item .orig,.item .trust,.item .sum,.item .src{grid-column:2}
+.item .trust{margin:0 0 2mm}.item .trust .tag:first-child{margin-left:0}
+.item h3{font-size:12pt;margin:0 0 1mm;line-height:1.38;break-after:avoid}
+.item .orig{font-size:7.9pt;color:var(--muted);margin:0 0 2.2mm;line-height:1.4}
+.item .sum{margin:0;padding:0;list-style:none}
+.item .sum li{position:relative;padding-left:4mm;margin-bottom:1.2mm}
+.item .sum li:last-child{margin-bottom:0}
+.item .sum li::before{content:"";position:absolute;left:.3mm;top:.52em;width:1.8mm;height:1.8mm;border-radius:50%;background:var(--cyan)}
+.item .src{font-size:7.8pt;color:var(--muted);margin-top:2mm;line-height:1.5}
+.tag{display:inline-block;font-size:7.6pt;line-height:1.55;background:var(--panel);color:var(--ink);padding:0 2mm;border-radius:9mm;margin-left:1mm;white-space:nowrap}
+.tag.ok{background:var(--tint);color:var(--deep);font-weight:700}
+h4.tier{display:block;width:fit-content;font-size:8pt;color:var(--deep);background:var(--tint);border-radius:9mm;padding:.2mm 2.6mm;margin:0 0 2mm;font-weight:700;break-after:avoid;page-break-after:avoid}
+.ref{font-size:8.6pt;line-height:1.5;padding:2.2mm 3mm;margin-bottom:1.2mm;background:var(--panel);border-radius:var(--r);break-inside:avoid}
+.ref .t{display:block;font-size:9.4pt;font-weight:700;color:var(--ink);margin-bottom:.4mm}
+.ref .m{font-size:7.8pt;color:var(--muted);margin-top:.6mm}
+.ref .m .tag{background:#fff}
+.none{color:var(--muted);margin:0 0 2mm;font-size:8.8pt}
+section.srcs>h2{font-size:11pt}
+.sources{font-size:7.4pt;line-height:1.45;padding-left:5mm;margin:0;columns:2;column-gap:8mm;color:var(--body)}
+.sources li{margin-bottom:1.2mm;break-inside:avoid}
+.sources li::marker{color:var(--deep)}
+.sources a{display:block;word-break:break-all}
+sup{font-size:6.8pt;line-height:0}
+.item .sum li,.item .orig,.ref{text-wrap:pretty}
+.item h3,.key .h{text-wrap:balance}
+@media screen{body{max-width:178mm;margin:12mm auto;padding:0 4mm}}
+@media screen and (max-width:640px){
+  body{margin:0 auto;padding:4mm 4mm 10mm;font-size:15px}
+  .mast{grid-template-columns:1fr;row-gap:3mm}.mast h1{font-size:26px}.mast dl{white-space:normal}
+  .box{padding:4mm 3mm}.key{grid-template-columns:30px 1fr;padding:3mm}.key .n{width:26px;height:26px;line-height:26px;font-size:14px}
+  .key .h{grid-row:1}.key .g{grid-column:2;grid-row:2;font-size:15px}.key .s{grid-column:2;grid-row:3;justify-self:start;margin-top:1.5mm}
+  .counts{table-layout:auto}.counts thead th{font-size:11px;word-break:keep-all;overflow-wrap:normal}.counts th.sum{white-space:nowrap}
+  .item .meta{display:grid;grid-template-columns:auto 1fr;column-gap:3mm;align-items:baseline}
+  .item .meta dt{margin-top:1mm}.item .meta dt.figl,.item .meta dd.fig,.item .meta dd.q{grid-column:1 / -1;justify-self:start}
+  .item .meta dd.fig,.item .meta dd.q{justify-self:stretch}.item .meta dd.q{font-size:14px}
+  .counts{display:block;overflow-x:auto;margin:2mm 0 0;width:100%}
+  .item{display:flex;flex-direction:column}
+  .item h3{order:1}.item .orig{order:2}.item .trust{order:3}.item .meta{order:4;margin:0 0 3mm;align-self:stretch}.item .sum{order:5}.item .src{order:6}
+  .sources{columns:1}
+  .item .meta,.item .meta dt.figl,.item .meta dd.fig.nil,.item .orig,.item .src,.ref .m,.tag,h4.tier,.key .s,section>h2 .cnt,.mast .sub,.mast dl,.sources{font-size:12px}
+  .axn{font-size:12px}.mast .logo{height:20px}
+  .item .meta dd.fig{font-size:16px}.ref{font-size:14px}.ref .t{font-size:15px}sup{font-size:11px}
+}
+</style>
+</head>
+<body>
+<header class="mast">
+  <div>
+    <img class="logo" src="file:///tmp/ev_fonts/bonce.png" alt="B.once">
+    <h1>EV 시장·정책 브리핑</h1><div class="sub">배터리 데이터 신사업을 위한 국내외 시장·정책 일간 동향</div></div>
+  <dl><dt>이슈</dt><dd>제{{NNN}}호</dd><dt>발행일</dt><dd>{{YYYY-MM-DD (요일)}}</dd><dt>작성</dt><dd>{{HH:MM KST}}</dd><dt>조사 창</dt><dd>{{MM-DD HH:MM ~ MM-DD HH:MM KST}}</dd></dl>
+</header>
+
+<div class="box">
+  <h2>오늘의 핵심</h2>
+  <!-- 반복 .key × 최대 3. 핵심 0건이면 .key 대신 <p class="none">핵심 기준을 충족한 기사 없음</p>. href는 해당 .item의 id(k1~k3)와 맞춘다.
+       .h: 해당 .item의 h3와 같은 헤드라인([후속]과 "(최초 보도 MM-DD)" 표기 포함).
+       .g: 대표 수치와 그 원문 단서(최대·목표·계획·추정·초안·~까지)를 담은 한 줄 사실, 명사형. 헤드라인에 있는 주체는 생략 가능. 단서와 "(당사자 발표)"는 길어져도 빼지 않는다. 수치가 없으면 핵심 사실 한 줄.
+       .s: 축 번호, 축 이름(축별 건수표 머리의 이름: 시장 지표, 정책·규제, 중고·잔존가치, 보험·금융, 데이터·진단), 권역, 최초 공개 시각(5절 기준, KST, MM-DD HH:MM) 순. 핵심 항목은 최초 공개 시각이 확인된 기사이므로 시각은 항상 채운다. -->
+  <div class="key"><span class="n">{{1}}</span><span class="h"><a href="#{{k1}}">{{헤드라인}}</a></span><span class="s"><span class="axn">{{축 번호 1~5}}</span>{{축 이름}} · {{권역}} · {{MM-DD HH:MM}}</span><span class="g">{{대표 수치·원문 단서 한 줄}}</span></div>
+  <table class="counts">
+    <thead><tr><th>축별 건수</th><th><span class="axn">1</span>시장 지표</th><th><span class="axn">2</span>정책·규제</th><th><span class="axn">3</span>중고·잔존가치</th><th><span class="axn">4</span>보험·금융</th><th><span class="axn">5</span>데이터·진단</th><th class="sum">합계</th></tr></thead>
+    <tbody>
+      <!-- 0인 칸은 <td class="z">0</td> -->
+      <tr><th>핵심</th><td>{{n}}</td><td>{{n}}</td><td>{{n}}</td><td>{{n}}</td><td>{{n}}</td><td class="sum">{{n}}</td></tr>
+      <tr><th>참고</th><td>{{n}}</td><td>{{n}}</td><td>{{n}}</td><td>{{n}}</td><td>{{n}}</td><td class="sum">{{n}}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 반복: 축 ①~⑤ 각각 section 1개. h2의 .ax에는 축 번호 숫자(1~5), 뒤에는 축 이름, .cnt에는 이 축의 건수 -->
+<!-- .ax에는 1, 2, 3, 4, 5 가운데 하나만 쓴다(원문자 ①~⑤ 금지). 핵심·참고가 모두 0건인 축은 아래 한 줄로만 둔다: <section class="empty"><h2><span class="ax">축 번호</span>축 이름<span class="cnt">해당 없음</span></h2></section>
+     번호가 이어지는 빈 축이 둘 이상이면 한 줄로 합친다(예: 3·4가 비었을 때): <section class="empty"><h2><span class="ax">3</span><span class="ax">4</span>중고 EV·리스·잔존가치 · 보험·금융<span class="cnt">해당 없음</span></h2></section> 합친 줄은 그 축들이 있을 자리에 둔다. 다른 축을 사이에 둔 빈 축은 합치지 않는다. -->
+<section>
+  <h2><span class="ax">{{1}}</span>{{EV·배터리 시장 지표}}<span class="cnt">핵심 {{n}} · 참고 {{n}}</span></h2>
+  <!-- 반복 .item: 핵심 항목. 참고만 있는 축이면 <p class="none">핵심 항목 없음</p>. 오늘의 핵심에 오른 항목은 id="k1"~"k3", 나머지는 id를 두지 않는다 -->
+  <article class="item" id="{{k1}}">
+    <!-- 수치 칸은 두 형식 중 하나. 수치가 있으면: <dd class="fig">값·단위 중심 14자 이내, 수치 하나. 범위를 한정하는 단서(최대·목표·초안·~까지)는 값 앞에 한두 단어로 넣는다(예: 목표 연간 5만 대)</dd><dd class="q">대상 설명, 기준 기간, 원문 단서, 당사자 발표 해당 시 (당사자 발표)</dd>. 단서·기준 기간·대상 설명이 모두 없을 때만 dd.q를 지운다.
+         수치가 없으면 dd.fig와 dd.q 대신 반드시 <dd class="fig nil">수치 없음</dd> (class="fig"에 "수치 없음"을 쓰지 않는다). -->
+    <dl class="meta"><dt>주체</dt><dd>{{기관·기업}}</dd><dt class="figl">대표 수치</dt><dd class="fig">{{단서 + 값·단위}}</dd><dd class="q">{{대상 설명, 기준 기간, 원문 단서}}</dd></dl>
+    <h3>{{[후속] 선택}} {{행위 명사로 끝낸 헤드라인}} {{해당 시 "(최초 보도 MM-DD)"}}</h3>
+    <p class="orig">{{원문 제목}}</p>
+    <!-- 신뢰도 줄: 교차확인이 있으면 ok 태그, 당사자 발표면 중립 태그. 둘 다 없으면 이 줄 전체를 지운다. 경고성 표기는 리포트 어디에도 쓰지 않는다(목록은 지침 8절 8항, 세션 기록에만 적음) -->
+    <p class="trust">{{해당 시 <span class="tag ok">교차확인: 매체명</span>}}{{해당 시 <span class="tag">당사자 발표</span>}}</p>
+    <!-- 요약은 문장 하나당 li 하나, 3~4개. 첫 li에 가장 중요한 사실(누가 무엇을)을 둔다. 각주는 마지막 li 끝에 -->
+    <ul class="sum"><li>{{사실 1, 명사형 종결}}</li><li>{{사실 2}}</li><li>{{사실 3}}<sup><a href="{{기사 URL}}">[{{n}}]</a></sup></li></ul>
+    <!-- ", 원출처 자료[n]" 부분은 기사가 발표·통계·법령을 보도한 경우에만 둔다. 매체 자체 취재·인터뷰 기사면 지우고, 역추적 대상인데 못 찾았으면 지운다. 한국 매체는 게재 시각을 KST 하나만 쓴다. -->
+    <div class="src">{{매체}}({{권역}}), 등급: {{원출처 또는 1등급}}, 게재 {{현지 시각}} ({{KST}}), 원출처 자료<sup><a href="{{원출처 URL}}">[{{n}}]</a></sup></div>
+  </article>
+  <h4 class="tier">참고 {{n}}건</h4>
+  <!-- 반복 .ref. 없으면 이 h4와 함께 생략 -->
+  <div class="ref"><span class="t">{{한국어 제목}}</span>{{한 줄 사실 요약 또는 "본문 미확인"}}<div class="m">{{매체}}, {{권역}}, {{MM-DD HH:MM KST}}<span class="tag">{{2등급}}</span> <sup><a href="{{URL}}">[{{n}}]</a></sup></div></div>
+</section>
+
+<section class="srcs">
+  <h2>출처 목록</h2>
+  <ol class="sources">
+    <!-- 반복 li: 각주 번호 순 -->
+    <li>{{매체·기관}}, 「{{원문 제목}}」, {{게재 일시}}. <a href="{{URL}}">{{URL}}</a></li>
+  </ol>
+</section>
+<script>
+(function(){
+  var PDF=location.hash==="#pdf";
+  if(PDF){var st=document.createElement("style");st.textContent="body{max-width:none!important;width:178mm;margin:0!important;padding:0!important}";document.head.appendChild(st)}
+  function h(el){return el.getBoundingClientRect().height}
+  function fit(){
+    document.querySelectorAll(".item h3,.key .h").forEach(function(el){
+      var lh=parseFloat(getComputedStyle(el).lineHeight)||12,base=h(el);
+      if(base<lh*1.8)return;
+      for(var s=1;s<=3;s++){el.style.letterSpacing=(-0.004*s)+"em";el.style.wordSpacing=(-0.008*s)+"em";if(h(el)<base-lh*0.5)return}
+      el.style.letterSpacing="";el.style.wordSpacing="";
+    });
+  }
+  (document.fonts&&document.fonts.ready?document.fonts.ready:Promise.resolve()).then(function(){fit()});
+})();
+</script>
+</body>
+</html>
