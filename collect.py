@@ -8,13 +8,17 @@ OUT_DIR/items.jsonl에 처음 본 항목만 first_seen과 함께 추가합니다
 OUT_DIR/status.json에는 목록·검색어별 조회 결과를 남깁니다.
 """
 import sys, os, re, json, html, hashlib, datetime as dt, urllib.parse
+from zoneinfo import ZoneInfo
 import requests, feedparser
 
 KEEP_DAYS = 10
+VER = 2  # 형식이 바뀌면 올림. 다른 버전 항목은 버리고 다시 쌓음
 UA = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36',
       'Accept-Language': 'ko,en;q=0.8,zh;q=0.6,ja;q=0.5,de;q=0.4'}
 BING = 'https://www.bing.com/news/search?q={q}&format=RSS&qft=interval%3d%228%22'
 NOW = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+TZ = {'한국': 'Asia/Seoul', '일본': 'Asia/Tokyo', '중국': 'Asia/Shanghai', 'EU': 'Europe/Berlin', '미국': 'America/New_York'}
+HAS_TZ = re.compile(r'([+-]\d{2}:?\d{2}|\bZ\b|\d(Z)$|\b(GMT|UTC|UT|[ECMP][SD]T|KST|JST|CST|CET|CEST|BST)\b)', re.I)
 
 
 def iso(t):
@@ -64,17 +68,27 @@ def matcher(words):
 
 
 def get(url):
-    r = requests.get(url, headers=UA, timeout=25)
-    r.raise_for_status()
-    return r
+    for i in range(2):
+        try:
+            r = requests.get(url, headers=UA, timeout=25 if i == 0 else 45)
+            r.raise_for_status()
+            return r
+        except (requests.Timeout, requests.ConnectionError):
+            if i: raise
 
 
-def rss_items(url):
+def rss_items(url, region=''):
     fp = feedparser.parse(get(url).content)
     out = []
     for e in fp.entries:
         t = e.get('published_parsed') or e.get('updated_parsed')
-        pub = iso(dt.datetime(*t[:6], tzinfo=dt.timezone.utc)) if t else None
+        raw = e.get('published') or e.get('updated') or ''
+        pub = None
+        if t:
+            d = dt.datetime(*t[:6], tzinfo=dt.timezone.utc)
+            if raw and not HAS_TZ.search(raw) and region in TZ:  # 시간대 없는 표기는 매체 현지 시간
+                d = d.replace(tzinfo=ZoneInfo(TZ[region]))
+            pub = iso(min(d, NOW + dt.timedelta(minutes=5)))
         out.append({'title': html.unescape(re.sub(r'<[^>]+>', '', e.get('title', ''))).strip(), 'url': e.get('link', ''), 'pub': pub})
     return out
 
@@ -109,7 +123,7 @@ def main(out):
     if os.path.exists(path):
         old = [json.loads(l) for l in open(path, encoding='utf-8') if l.strip()]
     lim = iso(NOW - dt.timedelta(days=KEEP_DAYS))
-    old = [o for o in old if o['first_seen'] >= lim]
+    old = [o for o in old if o.get('v') == VER and o['first_seen'] >= lim]
     known = {o['key'] for o in old}
     status = {'generated_at': iso(NOW), 'lists': {}, 'watch': {}}
     new = []
@@ -121,7 +135,7 @@ def main(out):
         if key in known:
             return False
         known.add(key)
-        new.append({'key': key, 'first_seen': first_seen, 'pub': it['pub'], 'src': src, 'region': region,
+        new.append({'v': VER, 'key': key, 'first_seen': first_seen, 'pub': it['pub'], 'src': src, 'region': region,
                     'kind': kind, 'title': it['title'][:300], 'url': it['url']})
         return True
 
@@ -129,7 +143,7 @@ def main(out):
     for f in feeds:
         st = {'ok': False, 'fetched': 0, 'matched': 0, 'new': 0, 'error': ''}
         try:
-            items = rss_items(f['url']) if f['how'] == 'rss' else html_items(f['url'], f['how'].split(':', 1)[1])
+            items = rss_items(f['url'], f['region']) if f['how'] == 'rss' else html_items(f['url'], f['how'].split(':', 1)[1])
             st['ok'], st['fetched'] = True, len(items)
             for it in items:
                 if f['all'] or ok(it['title']):
