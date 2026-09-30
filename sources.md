@@ -55,3 +55,35 @@ Elektroauto, Elektroautos, E-Auto, E-Autos, Batterie, Akku, Lithium, Gebrauchtwa
 - 미국: insideevs.com, insurancejournal.com, cnbc.com, coxautoinc.com
 - 중국: news.cn, yicai.com, caixin.com, 21jingji.com, stcn.com, gasgoo.com
 - 일본: nikkei.com, nikkan.co.jp, netdenjd.com, response.jp, kyodonews.jp
+
+## D. 주체 별칭
+사건 중복 판정에서 같은 주체로 봅니다. 한 줄에 같은 주체의 여러 표기를 `=`로 잇습니다. 새로 겹치는 주체가 나오면 줄을 추가합니다.
+
+- NIO Inc. = NIO = NIO Power = 蔚来 = 니오
+- Geely Holding Group = Geely = 吉利 = 지리
+- Contemporary Amperex Technology Co., Limited = CATL = 宁德时代 = 닝더스다이
+- BYD Company Limited = BYD = 比亚迪 = 비야디 = BYD Auto Japan = BYD오토재팬
+- Toyota Motor Corporation = Toyota = 토요타 = トヨタ
+- Honda Motor Co., Ltd. = Honda = 혼다 = ホンダ
+- Nissan Motor Co., Ltd. = Nissan = 닛산 = 日産
+- 현대자동차그룹 = 현대자동차 = 현대차 = 현대차그룹 = Hyundai Motor Group = Hyundai Motor Company = Hyundai
+- 기아 = Kia
+- LG에너지솔루션 = LG엔솔 = LG Energy Solution
+- 삼성SDI = Samsung SDI
+- SK온 = SK On
+- Volkswagen AG = Volkswagen = VW = 폭스바겐
+- PowerCo SE = PowerCo = 파워코
+- Tesla, Inc. = Tesla = 테슬라
+- General Motors = GM = 제너럴모터스
+- Ford Motor Company = Ford = 포드
+- Stellantis N.V. = Stellantis = 스텔란티스
+- Renault Group = Renault = 르노
+- Mercedes-Benz Group = Mercedes-Benz = 메르세데스벤츠 = 벤츠
+- BMW AG = BMW
+- ACEA = European Automobile Manufacturers' Association = 유럽자동차제조협회
+- Ministry of Industry and Information Technology = MIIT = 工业和信息化部 = 工信部 = 중국 공업정보화부 = 공업정보화부
+- European Commission = EU 집행위원회 = 유럽연합 집행위원회 = EC
+- U.S. Department of Transportation = USDOT = 미국 교통부
+- National Highway Traffic Safety Administration = NHTSA = 미국 도로교통안전국
+- 산업통상자원부 = 산업부 = MOTIE
+- 국토교통부 = 국토부

@@ -126,6 +126,13 @@ def main(out):
     old = [o for o in old if o.get('v') == VER and o['first_seen'] >= lim]
     known = {o['key'] for o in old}
     status = {'generated_at': iso(NOW), 'lists': {}, 'watch': {}}
+    try:
+        prev = json.load(open(os.path.join(out, 'status_prev.json'), encoding='utf-8'))
+    except (FileNotFoundError, ValueError):
+        prev = {}
+
+    def last_nz(group, name, n):  # 마지막으로 1건 이상 받은 시각(0건이 이어지면 구조 변경·차단 의심)
+        return iso(NOW) if n else prev.get(group, {}).get(name, {}).get('last_nonzero')
     new = []
 
     def add(src, region, kind, it, first_seen, bf=False):
@@ -152,18 +159,24 @@ def main(out):
                     st['new'] += add(f['name'], f['region'], 'list', it, fs, backfill and not it['pub'])
         except Exception as e:  # noqa: BLE001
             st['error'] = f'{type(e).__name__}: {str(e)[:160]}'
+        st['last_nonzero'] = last_nz('lists', f['name'], st['fetched'])
         status['lists'][f['name']] = st
     for q in watch:
-        st = {'ok': False, 'fetched': 0, 'new': 0, 'error': ''}
+        st = {'ok': False, 'fetched': 0, 'matched': 0, 'new': 0, 'error': ''}
+        term = max(re.sub(r'"', '', q).split(), key=len).lower()  # 검색어의 고유 단어(업체명 등)
         try:
             items = rss_items(BING.format(q=urllib.parse.quote(q)))
             st['ok'], st['fetched'] = True, len(items)
             for it in items:
+                if not (ok(it['title']) or term in it['title'].lower()):  # 무관한 결과(휴대폰·감시카메라 등) 제거
+                    continue
+                st['matched'] += 1
                 it['url'] = bing_url(it['url'])
                 fs = it['pub'] if backfill and it['pub'] and it['pub'] <= iso(NOW) else iso(NOW)
                 st['new'] += add('watch:' + q, '', 'watch', it, fs, backfill and not it['pub'])
         except Exception as e:  # noqa: BLE001
             st['error'] = f'{type(e).__name__}: {str(e)[:160]}'
+        st['last_nonzero'] = last_nz('watch', q, st['fetched'])
         status['watch'][q] = st
     os.makedirs(out, exist_ok=True)
     with open(path, 'w', encoding='utf-8') as fh:
