@@ -1,31 +1,57 @@
-# EV 시장·정책 브리핑 참조 목록
+# EV 시장·정책 브리핑 수집 목록
 
-예약 작업 프롬프트가 실행할 때 내려받아 쓰는 참조 데이터입니다. 판정 규칙은 프롬프트에, 표적 검색어는 watchlist.md에 있고, 이 파일은 "어느 목록을 볼지"와 1등급 도메인만 담습니다. 1등급 도메인은 같은 사건을 여러 매체가 보도했을 때 실을 URL을 고르는 데만 씁니다.
+GitHub Actions의 collect.py가 매시간 이 파일(A·B절)과 watchlist.md를 읽어 data 브랜치의 items.jsonl에 새 항목을 쌓습니다. 판정 규칙은 예약 작업 프롬프트에, 표적 검색어는 watchlist.md에 있습니다.
 
-## A. 목록 주소
+## A. 목록
+형식: `- 이름 | 권역 | 방식 | URL | 옵션`
+- 방식: `rss` 또는 `html:<기사 링크 정규식>`(목록 페이지의 기사 링크를 뽑음)
+- 옵션: `전체`는 제목 필터 없이 모두 수집, 비우면 B절 단어가 제목에 있는 항목만 수집
 
-N은 WebFetch로 나열할 최신 항목 수이며, 적혀 있지 않으면 30입니다. "후보 규칙"이 적힌 목록은 그 규칙을 일반 선별 규칙보다 우선합니다.
+- 전기신문 | 한국 | rss | https://www.electimes.com/rss/allArticle.xml |
+- 디일렉 | 한국 | rss | https://www.thelec.kr/rss/allArticle.xml |
+- 전자신문 | 한국 | rss | https://rss.etnews.com/Section902.xml |
+- 한국경제 | 한국 | rss | https://www.hankyung.com/feed/economy |
+- 모터그래프 | 한국 | rss | https://www.motorgraph.com/rss/allArticle.xml | 전체
+- 한국보험신문 | 한국 | rss | https://www.insnews.co.kr/rss/allArticle.xml |
+- 보험저널 | 한국 | rss | https://www.insjournal.co.kr/rss/allArticle.xml |
+- electrive | EU | rss | https://www.electrive.com/feed/ | 전체
+- electrive.net | EU | rss | https://www.electrive.net/feed/ | 전체
+- Handelsblatt 기업 | EU | rss | https://feeds.cms.handelsblatt.com/unternehmen |
+- Handelsblatt 정치 | EU | rss | https://feeds.cms.handelsblatt.com/politik |
+- Just Auto | EU | rss | https://www.just-auto.com/feed/ |
+- kfz-betrieb | EU | rss | https://www.kfz-betrieb.vogel.de/rss/news.xml |
+- Insurance Journal | 미국 | rss | https://www.insurancejournal.com/rss/news/national/ |
+- Electrek | 미국 | rss | https://electrek.co/feed/ | 전체
+- Repairer Driven News | 미국 | rss | https://www.repairerdrivennews.com/feed/ |
+- Auto Remarketing | 미국 | rss | https://www.autoremarketing.com/feed/ |
+- CBT News | 미국 | rss | https://www.cbtnews.com/feed/ |
+- GlobeNewswire 자동차 | 미국 | rss | https://www.globenewswire.com/RssFeed/industry/3000-Automobiles%20Parts/feedTitle/GlobeNewswire%20-%20Industry%20News%20on%20Automobiles%20Parts |
+- 미국 에너지부 | 미국 | html:/articles/ | https://www.energy.gov/newsroom |
+- NHTSA | 미국 | html:/press-releases/ | https://www.nhtsa.gov/press-releases |
+- 第一财经 | 중국 | html:/news/\d+\.html | https://www.yicai.com/news/ |
+- 盖世汽车 | 중국 | html:/news/\d{6}/ | https://auto.gasgoo.com/ | 전체
+- CnEVPost | 중국 | rss | https://cnevpost.com/feed/ | 전체
+- 중국 공업정보화부 | 중국 | html:/art/20\d\d/ | https://www.miit.gov.cn/ |
+- Response | 일본 | rss | https://response.jp/rss/index.rdf |
+- 日刊工業新聞 | 일본 | rss | https://www.nikkan.co.jp/rss/nksrdf.rdf |
+- 日刊自動車新聞 | 일본 | html:/archives/\d+ | https://www.netdenjd.com/ | 전체
+- eletric-vehicles.com(발견 전용, 리포트 URL로 쓰지 않음) | 미국 | rss | https://eletric-vehicles.com/feed/ | 전체
 
-- 한국: 전기신문 `https://www.electimes.com/rss/allArticle.xml`, 디일렉 `https://www.thelec.kr/rss/allArticle.xml`, 전자신문 `https://rss.etnews.com/Section902.xml` (N=50), 한국경제 `https://www.hankyung.com/feed/economy` (N=50), 모터그래프(2등급) `https://www.motorgraph.com/rss/allArticle.xml`, 보험 전문지 insnews(2등급, ④ 발견용) `https://www.insnews.co.kr/rss/allArticle.xml` (N=50, 후보 규칙: 제목에 전기차·EV·배터리·자동차보험 중 하나가 있을 때만 후보), 보험 전문지 insjournal(2등급, ④ 발견용) `https://www.insjournal.co.kr/rss/allArticle.xml` (N=60, 후보 규칙: insnews와 같음)
-- EU: electrive `https://www.electrive.com/feed/`, electrive.net `https://www.electrive.net/feed/`, Handelsblatt 기업 `https://feeds.cms.handelsblatt.com/unternehmen`, Handelsblatt 정치(dpa 기사 포함) `https://feeds.cms.handelsblatt.com/politik`, Just Auto(2등급) `https://www.just-auto.com/feed/`, kfz-betrieb(2등급, 독일 자동차 유통 전문지, ③ 발견용) `https://www.kfz-betrieb.vogel.de/rss/news.xml` (N=50, lastBuildDate가 항상 00:00으로 찍히므로 항목의 pubDate(시간대 포함)로 판단)
-- 미국: Insurance Journal `https://www.insurancejournal.com/rss/news/national/`, Electrek(2등급) `https://electrek.co/feed/`, Repairer Driven News(2등급, 차량 데이터·수리권) `https://www.repairerdrivennews.com/feed/`, Auto Remarketing(2등급, 중고차 리마케팅·오토 파이낸스, ③④ 발견용) `https://www.autoremarketing.com/feed/` (전체 20개), CBT News(2등급, 딜러 업계·중고차·통상 정책, ②③ 발견용) `https://www.cbtnews.com/feed/` (전체 15개)
-- 중국: 第一财经 `https://www.yicai.com/news/`, 盖世汽车 `https://auto.gasgoo.com/`(`autodata.gasgoo.com` URL은 본문이 JS로 그려져 비어 있으므로 후보에서 제외), CnEVPost(2등급) `https://cnevpost.com/feed/`
-- 일본: Response `https://response.jp/rss/index.rdf`, 日刊工業新聞 `https://www.nikkan.co.jp/rss/nksrdf.rdf` (N=50), 日刊自動車新聞 `https://www.netdenjd.com/`
-- 공식 창구: 중국 공업정보화부 `https://www.miit.gov.cn/`, 미국 에너지부 `https://www.energy.gov/newsroom`, 미국 도로교통안전국 `https://www.nhtsa.gov/press-releases`. 한국 부처 발표는 매체 목록과 추적 목록 검색으로 발견합니다(korea.kr은 robots 차단).
-- 보도자료 배포처(원출처): GlobeNewswire 자동차·부품 `https://www.globenewswire.com/RssFeed/industry/3000-Automobiles%20Parts/feedTitle/GlobeNewswire%20-%20Industry%20News%20on%20Automobiles%20Parts`
-- 발견 전용 목록: eletric-vehicles.com `https://eletric-vehicles.com/feed/` (통신사 보도 발견용). 이 사이트의 URL은 리포트에 쓰지 않습니다.
+## B. 제목 필터 단어
+옵션이 비어 있는 목록은 제목에 아래 단어 중 하나가 있어야 수집합니다. 영문은 단어 경계로, 나머지는 포함 여부로 봅니다(대소문자 무시).
 
-## B. 제목 신호어
+전기차, 전기자동차, 배터리, 이차전지, 2차전지, 전고체, 리튬, 니켈, 양극재, 충전, 중고차, 자동차보험, 잔존가치, 잔가, 리스, 보조금, 세액공제, 관세, 연비, 완성차, 현대차, 기아, LG에너지솔루션, 삼성SDI, SK온, 사용후, 재제조, 이력관리
+EV, EVs, electric vehicle, electric vehicles, electric car, battery, batteries, lithium, charging, used car, used cars, residual, lease, leasing, auto insurance, tariff, tariffs, subsidy, tax credit, fuel economy, CAFE, emissions, right to repair, vehicle data, recycling, second-life, OBD, telematics
+电动, 新能源, 电池, 锂, 充电, 换电, 二手车, 保值, 车险, 关税, 补贴, 购置税, 回收, 溯源
+電気自動車, 電池, バッテリー, リチウム, 充電, 中古車, 残価, 自動車保険, 関税, 補助金, 燃費, リサイクル
+Elektroauto, Elektroautos, E-Auto, E-Autos, Batterie, Akku, Lithium, Gebrauchtwagen, Restwert, Leasing, Kfz-Versicherung, Zoll, Zölle, Förderung, Flottengrenzwert
 
-관세, 통상, 보조금, 세액공제, 소비세, 규제, 법안, 시행령, 연비, 잔존가치, 중고, 보험, 리스, 배터리, 리튬, 나트륨, 전고체, 재사용, 재제조 / tariff, subsidy, tax credit, regulation, rule, standards, fuel economy, CAFE, emissions, mandate, ban, residual, used EV, insurance, lease, battery, recycling, second-life / 关税, 补贴, 政策, 购置税, 保值, 二手, 车险, 电池, 碳酸锂, 回收 / 関税, 補助金, 規制, 燃費, 残価, 中古, 保険, 電池 / Zoll, Förderung, Steuer, Restwert, gebraucht, Versicherung, Batterie, E-Auto, Elektroauto
-
-EV 전문 매체(질문형·비유형 제목도 후보로 둠): electrive, electrive.net, Electrek, CnEVPost, Just Auto, eletric-vehicles.com
-
-## C. 1등급 도메인 (허용 목록)
+## C. 1등급 도메인
+같은 사건을 여러 매체가 보도했을 때 실을 URL을 고르는 데만 씁니다.
 
 - 글로벌: reuters.com, bloomberg.com, apnews.com, ft.com, wsj.com, asia.nikkei.com
 - 한국: yna.co.kr, news1.kr, hankyung.com, mk.co.kr, sedaily.com, edaily.co.kr, etnews.com, thelec.kr, electimes.com
-- EU: electrive.com, electrive.net, handelsblatt.com, faz.net, automobilwoche.de, fleetnews.co.uk, autonews.com(Automotive News Europe 포함)
+- EU: electrive.com, electrive.net, handelsblatt.com, faz.net, automobilwoche.de, fleetnews.co.uk, autonews.com
 - 미국: insideevs.com, insurancejournal.com, cnbc.com, coxautoinc.com
 - 중국: news.cn, yicai.com, caixin.com, 21jingji.com, stcn.com, gasgoo.com
 - 일본: nikkei.com, nikkan.co.jp, netdenjd.com, response.jp, kyodonews.jp
