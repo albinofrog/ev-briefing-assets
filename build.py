@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """EV 시장·정책 브리핑 기계 작업.
 
-  python3 build.py prep            자산 받기, 작업 시작 시각·3일 기준 고정
+  python3 build.py prep            자산·수집 데이터 받기, 시각 고정, 후보 목록(/tmp/ev/candidates.md) 생성
   python3 build.py schema          briefing.json 형식과 예시 출력
   python3 build.py check  FILE     규칙 검사(오류가 있으면 종료 코드 1)
   python3 build.py render FILE     검사 후 HTML·PDF 제작, 장부 줄·푸시·run_log 블록 출력
@@ -16,6 +16,7 @@ W = '/tmp/ev'
 FONTS = '/tmp/ev_fonts'
 OUT = '/mnt/user-data/outputs'
 REPO = 'https://raw.githubusercontent.com/albinofrog/ev-briefing-assets/main/'
+DATA = 'https://raw.githubusercontent.com/albinofrog/ev-briefing-assets/data/'
 KST = dt.timezone(dt.timedelta(hours=9))
 FRESH_H = 72
 KEEP_DAYS = 10
@@ -28,8 +29,9 @@ BANNED = r'시사|전망|기회|위협|보인다|예상|주목|당사(?!자)'
 WEEK = '월화수목금토일'
 
 ASSETS = [('template.html', f'{W}/template.html'), ('sources.md', f'{W}/sources.md'),
-          ('watchlist.md', f'{W}/watchlist.md'), ('collector.md', f'{W}/collector.md'), ('fonts/archivonarrow.woff2', f'{FONTS}/archivonarrow.woff2'),
-          ('fonts/lgsmart.woff2', f'{FONTS}/lgsmart.woff2'), ('serv04_img_01.png', f'{FONTS}/bonce.png')]
+          ('fonts/archivonarrow.woff2', f'{FONTS}/archivonarrow.woff2'),
+          ('fonts/lgsmart.woff2', f'{FONTS}/lgsmart.woff2'), ('serv04_img_01.png', f'{FONTS}/bonce.png'),
+          (DATA + 'items.jsonl', f'{W}/items.jsonl'), (DATA + 'status.json', f'{W}/status.json')]
 
 SCHEMA = r'''
 {
@@ -52,13 +54,13 @@ SCHEMA = r'''
       "published_kst": "09-28 17:14",          // "MM-DD HH:MM" 또는 "MM-DD"
       "first_public": "2026-09-28 17:14",      // 사건 최초 공개 KST. 시각을 모르면 "2026-09-28"(기준일 다음 날 이후만 수록 가능)
       "body_read": true,
-      "relevance": 1,                          // 관련도 1~3. core는 1·2, ref는 3 또는 본문 미확인
+      "relevance": 1,                          // 관련도 1~3
+      "trust_fail": null,                      // 관련도 1·2인데 참고로 둘 때 사유: "self_promo" | "time_unverified"
       "origin": {"url": "https://…", "outlet": "현대자동차그룹", "title": "…", "date": "2026-09-28"},  // 없으면 null
       "event_key": "현대자동차그룹 / 개발 / -"   // 주체 / 행위 명사 1개 / 대표 수치("|" 금지)
     }
   ],
-  "calls": {"A": 18, "B": 19, "C": 16, "D": 24, "본세션": 12},   // 웹 호출(WebFetch·WebSearch) 수
-  "yield": {"electrive": "14/3/1", "watch:중고 전기차 배터리": "5/2/1"},   // 창 안/후보/수록
+  "calls": {"본문": 22, "원출처·원매체": 8, "실패목록": 3},   // 웹 호출(WebFetch·WebSearch) 수
   "dropped": ["제목 앞 20자 | 사유", "…"],   // 주요 탈락 5건 이내
   "errors": ["도구 오류 원문 요약"]
 }
@@ -78,10 +80,21 @@ def kst(s):
 
 def curl(src, dst):
     for _ in range(2):
-        r = subprocess.run(['curl', '-sSfL', '--max-time', '60', '-o', dst, REPO + src], capture_output=True, text=True)
+        r = subprocess.run(['curl', '-sSfL', '--max-time', '60', '-o', dst, src if src.startswith('http') else REPO + src],
+                           capture_output=True, text=True)
         if r.returncode == 0 and os.path.getsize(dst) > 0:
             return ''
     return (r.stderr or 'empty').strip()
+
+
+def read_mem():
+    p = f'{W}/memstate.md'
+    if not os.path.exists(p):
+        sys.exit('/tmp/ev/memstate.md 없음: 메모리 state.md 내용을 저장')
+    m = dict(re.findall(r'^(issue|watermark|running):\s*(\S+)', open(p).read(), re.M))
+    if not re.fullmatch(r'\d+', m.get('issue', '')) or not re.match(r'20\d\d-', m.get('watermark', '')):
+        sys.exit('memstate.md 형식: "issue: 숫자", "watermark: ISO 시각", "running: ISO 시각 또는 -"')
+    return int(m['issue']), m['watermark'], m.get('running', '-')
 
 
 def prep():
@@ -92,11 +105,54 @@ def prep():
                   open(f'{W}/state.json', 'w'))
     st = now_state()
     s, c = kst(st['start']), kst(st['cutoff'])
+    issue, wm, running = read_mem()
     print(f"작업 시작: {st['start']} (KST {s:%Y-%m-%d %H:%M} {WEEK[s.weekday()]})")
     print(f"수록 기준: 최초 공개 {st['cutoff']} 이후 (KST {c:%m-%d %H:%M} ~ {s:%m-%d %H:%M})")
+    if running != '-' and kst(st['start']) - kst(running) < dt.timedelta(hours=3):
+        print(f'중단: 다른 회차가 {running}에 시작해 진행 중일 수 있음(3시간 이내)')
+        sys.exit(2)
+    fails = []
     for src, dst in ASSETS:
         err = curl(src, dst)
-        print(f"{'OK  ' if not err else '실패'} {src}" + (f' | {err}' if err else ''))
+        if err: fails.append(src.split('/')[-1])
+        print(f"{'OK  ' if not err else '실패'} {src.split('/')[-1]}" + (f' | {err}' if err else ''))
+    if fails:
+        print('필수 파일 실패: ' + ', '.join(fails)); sys.exit(1)
+    status = json.load(open(f'{W}/status.json'))
+    age = kst(st['start']) - kst(status['generated_at'])
+    print(f"수집 데이터: {status['generated_at']} 생성({int(age.total_seconds() // 3600)}시간 전), 보관 {status['total']}건")
+    if age > dt.timedelta(hours=6):
+        print('경고: 수집 데이터가 6시간 넘게 갱신되지 않음(GitHub Actions 확인 필요)')
+    sent = read_sent()
+    seen = {r['url'] if r['url'].startswith('u:') else uhash(r['url']) for r in sent} if isinstance(sent, list) else set()
+    lo = (kst(st['cutoff']) - dt.timedelta(hours=12)).astimezone(dt.timezone.utc).isoformat()[:19]
+    cands = []
+    for ln in open(f'{W}/items.jsonl', encoding='utf-8'):
+        if not ln.strip(): continue
+        o = json.loads(ln)
+        if o.get('bf') or o['first_seen'][:19] <= wm[:19].replace('Z', ''): continue  # bf: 첫 수집 때 발행 시각 없이 잡힌 기존 항목
+        if o['pub'] and o['pub'][:19] < lo: continue
+        if uhash(o['url']) in seen: continue
+        cands.append(o)
+    cands.sort(key=lambda o: (o['kind'], o['src'], o['pub'] or o['first_seen']))
+    with open(f'{W}/candidates.md', 'w', encoding='utf-8') as fh:
+        cur = None
+        for n, o in enumerate(cands, 1):
+            if o['src'] != cur:
+                cur = o['src']; fh.write(f"\n## {cur}{' (' + o['region'] + ')' if o['region'] else ''}\n")
+            when = f"{kst(o['pub']):%m-%d %H:%M} KST" if o['pub'] else f"처음 확인 {kst(o['first_seen']):%m-%d %H:%M}"
+            fh.write(f"c{n} | {when} | {o['title']} | {o['url']}\n")
+    by = {}
+    for o in cands: by[o['src']] = by.get(o['src'], 0) + 1
+    print(f"후보 {len(cands)}건 → /tmp/ev/candidates.md (워터마크 {wm} 이후 처음 수집된 항목)")
+    print('  ' + ', '.join(f'{k} {v}' for k, v in sorted(by.items(), key=lambda x: -x[1])))
+    bad = [(k, v['error'][:60]) for k, v in status['lists'].items() if not v['ok']]
+    if bad:
+        urls = dict(re.findall(r'^- ([^|]+?) \| [^|]+\| [^|]+\| (https?://\S+)', open(f'{W}/sources.md').read(), re.M))
+        print('수집 실패 목록(직접 확인 대상):')
+        for k, e in bad: print(f'  {k} | {urls.get(k, "?")} | {e}')
+    st.update({'issue': issue, 'watermark_next': status['generated_at']})
+    json.dump(st, open(f'{W}/state.json', 'w'))
 
 
 def host(u):
@@ -221,6 +277,7 @@ def check(path, quiet=False):
         if o is not None and not (isinstance(o, dict) and isinstance(o.get('url'), str) and o['url'].startswith('http')):
             bad.append('origin(url 필수, 없으면 null)')
         if 'relevance' in it and it['relevance'] not in (1, 2, 3): bad.append('relevance(1~3)')
+        if it.get('trust_fail') not in (None, 'self_promo', 'time_unverified'): bad.append('trust_fail')
         if miss or bad:
             E.append(f'{L}: 필드 누락 {miss} / 형식 오류 {bad}'); continue
         if tier not in ('core', 'ref'): E.append(f'{L}: tier는 core|ref')
@@ -235,8 +292,8 @@ def check(path, quiet=False):
         else:
             if has_t:
                 if fp < cutoff: E.append(f'{L}: 최초 공개가 3일 기준 밖 → 제외(새 단계면 새 단계 시각을 적음)')
-            elif fp.date() <= cutoff.date():
-                E.append(f'{L}: 날짜만 확인된 기사가 기준일({cutoff:%m-%d}) 이전·당일 → 제외(시각을 확인했으면 시:분까지 적음)')
+            elif fp.date() < cutoff.date():
+                E.append(f'{L}: 날짜만 확인된 기사가 기준일({cutoff:%m-%d}) 이전 → 제외(시각을 확인했으면 시:분까지 적음)')
             if fp > start + dt.timedelta(hours=1): E.append(f'{L}: 최초 공개가 작업 시작 이후')
             m = re.match(r'(\d{2})-(\d{2})(?: (\d{2}):(\d{2}))?$', it['published_kst'].strip())
             if not m:
@@ -245,13 +302,13 @@ def check(path, quiet=False):
                 pk = dt.datetime(start.year, int(m.group(1)), int(m.group(2)), int(m.group(3) or 23), int(m.group(4) or 59), tzinfo=KST)
                 if pk > start + dt.timedelta(days=2): pk = pk.replace(year=start.year - 1)
                 if pk < fp: E.append(f'{L}: 게재 시각이 최초 공개보다 이름 → first_public을 게재 시각 이하로')
-            if o:
+            if o and not it.get('followup'):
                 od = re.match(r'(\d{4})-(\d{2})-(\d{2})', str(o.get('date', '')))
                 if not od: E.append(f'{L}: origin.date는 "YYYY-MM-DD"로 시작')
                 elif dt.date(*map(int, od.groups())) < fp.date():
                     E.append(f'{L}: 원출처({od.group()})가 최초 공개보다 이름 → first_public을 원출처 기준으로(3일 밖이면 제외)')
             ud = url_date(it['url'])
-            if ud and ud < cutoff.date() and not it.get('followup'):
+            if ud and ud < cutoff.date() - dt.timedelta(days=1) and not it.get('followup'):
                 E.append(f'{L}: URL 날짜 {ud}가 기준일 이전 → 제외')
         for u in [it['url']] + ([o['url']] if o else []):
             if dom_in(host(u), BLOCKED): E.append(f'{L}: 포털·발견 전용 URL 금지 {host(u)} → 원 매체 URL')
@@ -262,6 +319,7 @@ def check(path, quiet=False):
         if tier == 'core':
             if not it['body_read']: E.append(f'{L}: 핵심은 본문 확인 필수 → ref')
             if it['relevance'] == 3: E.append(f'{L}: 관련도 3은 참고 → ref')
+            if it.get('trust_fail'): E.append(f'{L}: trust_fail({it["trust_fail"]})이면 참고 → ref')
             if not isinstance(summ, list) or not summ:
                 E.append(f'{L}: 핵심 summary는 문장 목록')
             elif not 3 <= len(summ) <= 4:
@@ -270,7 +328,8 @@ def check(path, quiet=False):
         else:
             if not isinstance(summ, str): E.append(f'{L}: 참고 summary는 문자열 한 줄')
             if not it['body_read'] and summ != '본문 미확인': E.append(f'{L}: 본문 미확인이면 summary는 "본문 미확인"')
-            if it['body_read'] and it['relevance'] in (1, 2): E.append(f'{L}: 본문을 확인한 관련도 {it["relevance"]} 기사는 핵심 → core')
+            if it['body_read'] and it['relevance'] in (1, 2) and not it.get('trust_fail'):
+                E.append(f'{L}: 본문을 확인한 관련도 {it["relevance"]} 기사는 핵심 → core(참고로 둘 사유가 있으면 trust_fail)')
         if len(it['headline']) > 60: Wn.append(f'{L}: 헤드라인 {len(it["headline"])}자(60자 이내 권장)')
         if it.get('top'):
             if tier != 'core': E.append(f'{L}: top은 핵심만')
@@ -309,6 +368,8 @@ def check(path, quiet=False):
         full = sum(1 for c in picked if c[1] == a) >= 2
         worse = [c for c in picked if c[2] > r and (not full or c[1] == a)]
         if worse: E.append(f'{L}: 관련도 {r}인데 오늘의 핵심에서 빠짐(관련도 {worse[-1][2]} 항목 대신 넣음)')
+    tot = sum(v for v in d.get('calls', {}).values() if isinstance(v, int))
+    if tot > 40: Wn.append(f'웹 호출 합계 {tot}회(상한 40)')
     if not quiet or E or Wn:
         print(f'검사: 항목 {len(items)}(핵심 {ncore}) | 오류 {len(E)} | 확인 {len(Wn)}')
         for m in E: print('오류', m)
@@ -330,13 +391,9 @@ def render(path):
     s, c = kst(st['start']), kst(st['cutoff'])
     items = d['items']
     date = f'{s:%Y-%m-%d}'
-    try:
-        nums = [l.strip() for l in open(f'{W}/issue_no.txt').read().splitlines() if re.fullmatch(r'\s*\d+\s*', l)]
-    except FileNotFoundError:
-        nums = []
-    if len(nums) != 1:
-        sys.exit('/tmp/ev/issue_no.txt에 직전 호수 숫자 한 줄만 저장(메모리 파일이 없으면 0)')
-    issue = int(nums[0]) + 1
+    if 'issue' not in st:
+        sys.exit('prep을 먼저 실행')
+    issue = st['issue'] + 1
     nnn = f'{issue:03d}'
     fails = []
     core = [i for i in items if i['tier'] == 'core']
@@ -362,21 +419,23 @@ def render(path):
     total = sum(v for v in calls.values() if isinstance(v, int))
     head = f"## {'제' + nnn + '호' if items else '발행 없음'} | 시작 {st['start']} | 기준 {c:%m-%d %H:%M}~{s:%m-%d %H:%M} KST | 핵심 {len(core)}·참고 {len(refs)} | 파일 {'PDF·HTML' if len(files) == 2 else ('HTML' if files else '없음')}"
     log = [head, '호출: ' + ' / '.join(f'{k} {v}' for k, v in calls.items()) + f' / 합계 {total}',
-           '수확: ' + ', '.join(f'{k} {v}' for k, v in d.get('yield', {}).items()),
-           '수록: ' + ' ; '.join(f"{i['headline'][:20]} | {'핵심' if i['tier'] == 'core' else '참고'} R{i['relevance']}" for i in items),
+           '수록: ' + ' ; '.join(f"{i['headline'][:20]} | {'핵심' if i['tier'] == 'core' else '참고'} R{i['relevance']} | {host(i['url'])}" for i in items),
            '탈락: ' + ' ; '.join(d.get('dropped', [])[:5]),
            '오류: ' + ' ; '.join(d.get('errors', []) + fails)]
     block = '\n'.join(log)
-    for k in (4, 2, 3):
+    for k in (3, 4, 2):
         while len(block.encode()) > 1500 and len(log[k]) > 30:
             log[k] = log[k][:int(len(log[k]) * .8)] + '…'; block = '\n'.join(log)
     open(f'{W}/runlog_block.md', 'w').write(block + '\n')
     open(f'{W}/ledger.txt', 'w').write('\n'.join(ledger) + ('\n' if ledger else ''))
     open(f'{W}/push.txt', 'w').write(push)
+    mem = f"issue: {issue if items and files else st['issue']}\nwatermark: {st['watermark_next']}\nrunning: -\n"
+    open(f'{W}/memstate_next.md', 'w').write(mem)
     print('\n== 파일(전달 순서) ==\n' + ('\n'.join(files) or '없음'))
     print('== 장부 줄(5줄씩 추가) ==\n' + ('\n'.join(ledger) or '없음'))
     print('== 푸시 ==\n' + push)
     print('== run_log 블록 ==\n' + block)
+    print('== 메모리 state.md(전달 후 덮어씀) ==\n' + mem)
     if fails: print('== 실패 ==\n' + '\n'.join(fails))
 
 

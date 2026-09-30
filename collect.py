@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 import requests, feedparser
 
 KEEP_DAYS = 10
-VER = 2  # 형식이 바뀌면 올림. 다른 버전 항목은 버리고 다시 쌓음
+VER = 3  # 형식이 바뀌면 올림. 다른 버전 항목은 버리고 다시 쌓음
 UA = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36',
       'Accept-Language': 'ko,en;q=0.8,zh;q=0.6,ja;q=0.5,de;q=0.4'}
 BING = 'https://www.bing.com/news/search?q={q}&format=RSS&qft=interval%3d%228%22'
@@ -128,7 +128,7 @@ def main(out):
     status = {'generated_at': iso(NOW), 'lists': {}, 'watch': {}}
     new = []
 
-    def add(src, region, kind, it, first_seen):
+    def add(src, region, kind, it, first_seen, bf=False):
         if not it['url'].startswith('http') or not it['title']:
             return False
         key = hashlib.sha1(nurl(it['url']).encode()).hexdigest()[:12]
@@ -136,7 +136,7 @@ def main(out):
             return False
         known.add(key)
         new.append({'v': VER, 'key': key, 'first_seen': first_seen, 'pub': it['pub'], 'src': src, 'region': region,
-                    'kind': kind, 'title': it['title'][:300], 'url': it['url']})
+                    'kind': kind, 'title': it['title'][:300], 'url': it['url'], 'bf': bf})
         return True
 
     backfill = not old
@@ -149,7 +149,7 @@ def main(out):
                 if f['all'] or ok(it['title']):
                     st['matched'] += 1
                     fs = it['pub'] if backfill and it['pub'] and it['pub'] <= iso(NOW) else iso(NOW)
-                    st['new'] += add(f['name'], f['region'], 'list', it, fs)
+                    st['new'] += add(f['name'], f['region'], 'list', it, fs, backfill and not it['pub'])
         except Exception as e:  # noqa: BLE001
             st['error'] = f'{type(e).__name__}: {str(e)[:160]}'
         status['lists'][f['name']] = st
@@ -161,7 +161,7 @@ def main(out):
             for it in items:
                 it['url'] = bing_url(it['url'])
                 fs = it['pub'] if backfill and it['pub'] and it['pub'] <= iso(NOW) else iso(NOW)
-                st['new'] += add('watch:' + q, '', 'watch', it, fs)
+                st['new'] += add('watch:' + q, '', 'watch', it, fs, backfill and not it['pub'])
         except Exception as e:  # noqa: BLE001
             st['error'] = f'{type(e).__name__}: {str(e)[:160]}'
         status['watch'][q] = st
