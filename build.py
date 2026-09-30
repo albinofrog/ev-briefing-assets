@@ -399,11 +399,19 @@ def check(path, quiet=False):
                 else: E.append(msg + ' → 새 단계면 followup=true, 같은 사건이면 제외')
         if it.get('followup') and not any(key_sa(r['key'])[0] == key_sa(it['event_key'])[0] for r in sent):
             Wn.append(f'{L}: followup=true인데 장부에 같은 주체 없음')
-    evs = {}
+    evs, figs, subs = {}, {}, {}
     for i, it in enumerate(items, 1):
         if not isinstance(it.get('event_key'), str): continue
         k = key_sa(it['event_key'])
-        if k[0] in ('', '-') or k[1] in GENERIC_ACT: continue
+        parts = [x.strip() for x in it['event_key'].split('/')]
+        fig = norm(parts[2]) if len(parts) == 3 and parts[2].strip() not in ('', '-') else ''
+        if fig and fig in figs:
+            Wn.append(f"[{i}] 항목 {figs[fig]}와 대표 수치가 같음 → 같은 사건(다른 언어판·다른 표기)이면 하나만 남김")
+        if fig: figs.setdefault(fig, i)
+        if k[0] in ('', '-'): continue
+        if k[1] in GENERIC_ACT:
+            if k[0] in subs: Wn.append(f"[{i}] 항목 {subs[k[0]]}와 주체가 같고 행위가 '{k[1]}' → 같은 사건인지 직접 대조")
+            subs.setdefault(k[0], i); continue
         if k in evs: E.append(f"[{i}] 같은 회차에 같은 사건(항목 {evs[k]}와 주체·행위 일치) → 하나만 남김(다른 언어판·다른 매체 중복 포함)")
         evs.setdefault(k, i)
     dfr = d.get('deferred', [])
@@ -463,7 +471,7 @@ def render(path):
     top1 = sorted([i for i in core if i.get('top')], key=lambda x: x['top'])
     if items:
         push = f"EV 시장·정책 제{nnn}호 | 핵심 {len(core)}·참고 {len(refs)} | " + (
-            f"1) {top1[0]['headline'][:40]}" if top1 else '핵심 없음')
+            f"1) {short(top1[0]['headline'])}" if top1 else '핵심 없음')
     else:
         push = 'EV 시장·정책 | 3일 내 조건에 맞는 새 소식 없음'
     files = []
@@ -603,6 +611,12 @@ def build_html(d, s, c, nnn, date, fails):
     return hp, hp[:-5] + '.pdf'
 
 
+def short(t, n=40):
+    if len(t) <= n: return t
+    cut = t[:n].rsplit(' ', 1)[0]
+    return (cut if len(cut) >= n // 2 else t[:n]) + '…'
+
+
 def hl(i):
     return ('[후속] ' if i.get('followup') else '') + i['headline']
 
@@ -651,7 +665,11 @@ def make_pdf(hp, pp, fails):
 
 def seen_cmd(urls):
     sent = read_sent()
-    hs = {r['url'] if r['url'].startswith('u:') else uhash(r['url']) for r in sent} if isinstance(sent, list) else set()
+    if not isinstance(sent, list):
+        sys.exit('장부(/tmp/ev/sent.md)를 읽지 못해 확인할 수 없음')
+    if not urls or any(not u.startswith('http') for u in urls):
+        sys.exit('사용법: python3 build.py seen https://... [https://...]')
+    hs = {r['url'] if r['url'].startswith('u:') else uhash(r['url']) for r in sent}
     for u in urls:
         print(('기수록(제외) ' if uhash(u) in hs else '신규 ') + u)
 
