@@ -52,7 +52,7 @@ SCHEMA = r'''
       "published_kst": "09-28 17:14",          // "MM-DD HH:MM" 또는 "MM-DD"
       "first_public": "2026-09-28 17:14",      // 사건 최초 공개 KST. 시각을 모르면 "2026-09-28"(기준일 다음 날 이후만 수록 가능)
       "body_read": true,
-      "source_kind": "media",                  // url이 발표 주체 자신의 자료(보도자료·공시·정부 발표)면 origin
+      "relevance": 1,                          // 관련도 1~3. core는 1·2, ref는 3 또는 본문 미확인
       "origin": {"url": "https://…", "outlet": "현대자동차그룹", "title": "…", "date": "2026-09-28"},  // 없으면 null
       "event_key": "현대자동차그룹 / 개발 / -"   // 주체 / 행위 명사 1개 / 대표 수치("|" 금지)
     }
@@ -99,12 +99,6 @@ def prep():
         print(f"{'OK  ' if not err else '실패'} {src}" + (f' | {err}' if err else ''))
 
 
-def tier1():
-    txt = open(f'{W}/sources.md').read()
-    sec = txt[txt.index('## C.'):]
-    return set(re.findall(r'[a-z0-9-]+(?:\.[a-z0-9-]+)+', sec.lower()))
-
-
 def host(u):
     m = re.match(r'https?://([^/]+)', u or '')
     return m.group(1).lower() if m else ''
@@ -117,7 +111,6 @@ def dom_in(h, doms):
 EXCLUDED = ['tistory.com', 'blog.naver.com', 'brunch.co.kr', 'medium.com', 'substack.com', 'note.com', 'x.com',
             'twitter.com', 'facebook.com', 'linkedin.com', 'youtube.com', 'reddit.com', 'weibo.com', 'zhihu.com',
             'toutiao.com', 'baijiahao.baidu.com', 'wikipedia.org']
-WIRE = ['prnewswire.com', 'businesswire.com', 'globenewswire.com', 'accessnewswire.com', 'prnasia.com']
 GENERIC_ACT = {'발표', '공개', '밝힘', '언급', '보도', '-'}
 END_RE = re.compile(r'(했다|한다|된다|됐다|이다|였다|있다|없다|았다|었다|겠다|했습니다|합니다|됩니다|입니다|습니다|해요|예요|이에요|어요|아요)[.!?]?["”’]?$')
 
@@ -194,7 +187,6 @@ def check(path, quiet=False):
     d = json.load(open(path))
     items = d.get('items', [])
     E, Wn = [], []
-    t1 = tier1()
     sent = read_sent()
     if sent is None:
         E.append('/tmp/ev/sent.md 없음: 메모리 내용을 저장(파일이 없으면 빈 파일, 읽기 실패면 READ_FAILED 한 줄)')
@@ -202,17 +194,17 @@ def check(path, quiet=False):
     elif sent == 'FAILED':
         Wn.append('sent.md 읽기 실패: 중복 판정 생략(추정 금지)')
         sent = []
-    urls, tops = {}, []
+    urls, tops, cores = {}, [], []
     for i, it in enumerate(items, 1):
         L = f"[{i}] {str(it.get('headline') or '')[:24]}"
         tier = it.get('tier')
         need = ['tier', 'axis', 'region', 'headline', 'orig_title', 'summary', 'outlet', 'url', 'published',
-                'published_kst', 'first_public', 'body_read', 'source_kind', 'event_key']
+                'published_kst', 'first_public', 'body_read', 'relevance', 'event_key']
         if tier == 'core':
             need += ['subject', 'figure', 'figure_note']
         miss = [k for k in need if k not in it]
         strs = ['region', 'headline', 'orig_title', 'outlet', 'url', 'published', 'published_kst', 'first_public',
-                'source_kind', 'event_key'] + (['subject'] if tier == 'core' else [])
+                'event_key'] + (['subject'] if tier == 'core' else [])
         bad = [k for k in strs if k in it and not (isinstance(it[k], str) and it[k].strip())]
         bad += [k for k in ('figure', 'figure_note', 'key_line') if it.get(k) is not None and not isinstance(it[k], str)]
         summ = it.get('summary')
@@ -220,6 +212,7 @@ def check(path, quiet=False):
         o = it.get('origin')
         if o is not None and not (isinstance(o, dict) and isinstance(o.get('url'), str) and o['url'].startswith('http')):
             bad.append('origin(url 필수, 없으면 null)')
+        if 'relevance' in it and it['relevance'] not in (1, 2, 3): bad.append('relevance(1~3)')
         if miss or bad:
             E.append(f'{L}: 필드 누락 {miss} / 형식 오류 {bad}'); continue
         if tier not in ('core', 'ref'): E.append(f'{L}: tier는 core|ref')
@@ -260,11 +253,7 @@ def check(path, quiet=False):
         urls[nu] = i
         if tier == 'core':
             if not it['body_read']: E.append(f'{L}: 핵심은 본문 확인 필수 → ref')
-            if it['source_kind'] == 'origin':
-                if not dom_in(host(it['url']), list(t1) + WIRE):
-                    Wn.append(f'{L}: 원출처 표시 도메인 {host(it["url"])} → 발표 주체(기업·기관·배포처)의 공식 도메인인지 확인')
-            elif not dom_in(host(it['url']), t1):
-                E.append(f'{L}: 핵심 출처 조건 미충족({host(it["url"])}: 원출처도 1등급도 아님) → ref 또는 원출처 URL로 교체')
+            if it['relevance'] == 3: E.append(f'{L}: 관련도 3은 참고 → ref')
             if not isinstance(summ, list) or not summ:
                 E.append(f'{L}: 핵심 summary는 문장 목록')
             elif not 3 <= len(summ) <= 4:
@@ -273,11 +262,13 @@ def check(path, quiet=False):
         else:
             if not isinstance(summ, str): E.append(f'{L}: 참고 summary는 문자열 한 줄')
             if not it['body_read'] and summ != '본문 미확인': E.append(f'{L}: 본문 미확인이면 summary는 "본문 미확인"')
+            if it['body_read'] and it['relevance'] in (1, 2): E.append(f'{L}: 본문을 확인한 관련도 {it["relevance"]} 기사는 핵심 → core')
         if len(it['headline']) > 60: Wn.append(f'{L}: 헤드라인 {len(it["headline"])}자(60자 이내 권장)')
         if it.get('top'):
             if tier != 'core': E.append(f'{L}: top은 핵심만')
             if not it.get('key_line'): E.append(f'{L}: top 항목은 key_line 필요')
             tops.append((it['top'], it['axis']))
+        if tier == 'core': cores.append((it.get('top'), it['axis'], it['relevance'], L))
         texts = [('headline', it['headline'])]
         texts += [(f'summary{j}', x) for j, x in enumerate(summ if isinstance(summ, list) else [summ], 1)]
         texts += [(k, it.get(k)) for k in ('figure', 'figure_note', 'key_line') if it.get(k)]
@@ -302,6 +293,14 @@ def check(path, quiet=False):
         E.append(f'top 순위는 1..{need_n}을 한 번씩(현재 {ranks}, 한 축 2건까지)')
     for a in set(a for _, a in tops):
         if sum(1 for _, b in tops if b == a) > 2: E.append(f'오늘의 핵심에 축 {a}가 3건 이상')
+    picked = sorted([c for c in cores if c[0]], key=lambda c: c[0])
+    rels = [c[2] for c in picked]
+    if rels != sorted(rels): E.append(f'top 순위는 관련도 순(현재 관련도 {rels})')
+    for t, a, r, L in cores:
+        if t: continue
+        full = sum(1 for c in picked if c[1] == a) >= 2
+        worse = [c for c in picked if c[2] > r and (not full or c[1] == a)]
+        if worse: E.append(f'{L}: 관련도 {r}인데 오늘의 핵심에서 빠짐(관련도 {worse[-1][2]} 항목 대신 넣음)')
     if not quiet or E or Wn:
         print(f'검사: 항목 {len(items)}(핵심 {ncore}) | 오류 {len(E)} | 확인 {len(Wn)}')
         for m in E: print('오류', m)
