@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""EV 브리핑 목록 수집기. GitHub Actions가 매시간 실행합니다.
+"""EV 브리핑 목록 수집기. GitHub Actions가 실행합니다.
+
+주 실행은 브리핑 회차 시작 때 build.py kick의 호출이고, 매시간 예약은 회차 사이를 보완합니다.
 
   python3 collect.py OUT_DIR
 

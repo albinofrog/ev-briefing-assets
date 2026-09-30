@@ -1,6 +1,6 @@
 # EV 시장·정책 브리핑 수집 목록
 
-GitHub Actions의 collect.py가 매시간 이 파일(A·B절)과 watchlist.md를 읽어 data 브랜치의 items.jsonl에 새 항목을 쌓습니다. 판정 규칙은 예약 작업 프롬프트에, 표적 검색어는 watchlist.md에 있습니다.
+GitHub Actions의 collect.py가 브리핑 회차 시작 때(주)와 매시간 예약(보조)으로 이 파일(A·B절)과 watchlist.md를 읽어 data 브랜치의 items.jsonl에 새 항목을 쌓습니다. 판정 규칙은 예약 작업 프롬프트에, 표적 검색어는 watchlist.md에 있습니다.
 
 ## A. 목록
 형식: `- 이름 | 권역 | 방식 | URL | 옵션`
