@@ -109,59 +109,7 @@ sup{font-size:6.8pt;line-height:0}
 </style>
 </head>
 <body>
-<header class="mast">
-  <div>
-    <img class="logo" src="file:///tmp/ev_fonts/bonce.png" alt="B.once">
-    <h1>EV 시장·정책 브리핑</h1><div class="sub">배터리 데이터 신사업을 위한 국내외 시장·정책 일간 동향</div></div>
-  <dl><dt>이슈</dt><dd>제{{NNN}}호</dd><dt>발행일</dt><dd>{{YYYY-MM-DD (요일)}}</dd><dt>작성</dt><dd>{{HH:MM KST}}</dd><dt>조사 창</dt><dd>{{MM-DD HH:MM ~ MM-DD HH:MM KST}}</dd></dl>
-</header>
-
-<div class="box">
-  <h2>오늘의 핵심</h2>
-  <!-- 반복 .key × 최대 3. 핵심 0건이면 .key 대신 <p class="none">핵심 기준을 충족한 기사 없음</p>. href는 해당 .item의 id(k1~k3)와 맞춘다.
-       .h: 해당 .item의 h3와 같은 헤드라인([후속]과 "(최초 보도 MM-DD)" 표기 포함).
-       .g: 대표 수치와 그 원문 단서(최대·목표·계획·추정·초안·~까지)를 담은 한 줄 사실, 명사형. 헤드라인에 있는 주체는 생략 가능. 단서는 길어져도 빼지 않는다. 수치가 없으면 핵심 사실 한 줄.
-       .s: 축 번호, 축 이름(축별 건수표 머리의 이름: 시장 지표, 정책·규제, 중고·잔존가치, 보험·금융, 데이터·진단), 권역, 최초 공개 시각(5절 기준, KST, MM-DD HH:MM) 순. 핵심 항목은 최초 공개 시각이 확인된 기사이므로 시각은 항상 채운다. -->
-  <div class="key"><span class="n">{{1}}</span><span class="h"><a href="#{{k1}}">{{헤드라인}}</a></span><span class="s"><span class="axn">{{축 번호 1~5}}</span>{{축 이름}} · {{권역}} · {{MM-DD HH:MM}}</span><span class="g">{{대표 수치·원문 단서 한 줄}}</span></div>
-  <table class="counts">
-    <thead><tr><th>축별 건수</th><th><span class="axn">1</span>시장 지표</th><th><span class="axn">2</span>정책·규제</th><th><span class="axn">3</span>중고·잔존가치</th><th><span class="axn">4</span>보험·금융</th><th><span class="axn">5</span>데이터·진단</th><th class="sum">합계</th></tr></thead>
-    <tbody>
-      <!-- 0인 칸은 <td class="z">0</td> -->
-      <tr><th>핵심</th><td>{{n}}</td><td>{{n}}</td><td>{{n}}</td><td>{{n}}</td><td>{{n}}</td><td class="sum">{{n}}</td></tr>
-      <tr><th>참고</th><td>{{n}}</td><td>{{n}}</td><td>{{n}}</td><td>{{n}}</td><td>{{n}}</td><td class="sum">{{n}}</td></tr>
-    </tbody>
-  </table>
-</div>
-
-<!-- 반복: 축 ①~⑤ 각각 section 1개. h2의 .ax에는 축 번호 숫자(1~5), 뒤에는 축 이름, .cnt에는 이 축의 건수 -->
-<!-- .ax에는 1, 2, 3, 4, 5 가운데 하나만 쓴다(원문자 ①~⑤ 금지). 핵심·참고가 모두 0건인 축은 아래 한 줄로만 둔다: <section class="empty"><h2><span class="ax">축 번호</span>축 이름<span class="cnt">해당 없음</span></h2></section>
-     번호가 이어지는 빈 축이 둘 이상이면 한 줄로 합친다(예: 3·4가 비었을 때): <section class="empty"><h2><span class="ax">3</span><span class="ax">4</span>중고 EV·리스·잔존가치 · 보험·금융<span class="cnt">해당 없음</span></h2></section> 합친 줄은 그 축들이 있을 자리에 둔다. 다른 축을 사이에 둔 빈 축은 합치지 않는다. -->
-<section>
-  <h2><span class="ax">{{1}}</span>{{EV·배터리 시장 지표}}<span class="cnt">핵심 {{n}} · 참고 {{n}}</span></h2>
-  <!-- 반복 .item: 핵심 항목. 참고만 있는 축이면 <p class="none">핵심 항목 없음</p>. 오늘의 핵심에 오른 항목은 id="k1"~"k3", 나머지는 id를 두지 않는다 -->
-  <article class="item" id="{{k1}}">
-    <!-- 수치 칸은 두 형식 중 하나. 수치가 있으면: <dd class="fig">값·단위 중심 14자 이내, 수치 하나. 범위를 한정하는 단서(최대·목표·초안·~까지)는 값 앞에 한두 단어로 넣는다(예: 목표 연간 5만 대)</dd><dd class="q">대상 설명, 기준 기간, 원문 단서</dd>. 단서·기준 기간·대상 설명이 모두 없을 때만 dd.q를 지운다.
-         수치가 없으면 dd.fig와 dd.q 대신 반드시 <dd class="fig nil">수치 없음</dd> (class="fig"에 "수치 없음"을 쓰지 않는다). -->
-    <dl class="meta"><dt>주체</dt><dd>{{기관·기업}}</dd><dt class="figl">대표 수치</dt><dd class="fig">{{단서 + 값·단위}}</dd><dd class="q">{{대상 설명, 기준 기간, 원문 단서}}</dd></dl>
-    <h3>{{[후속] 선택}} {{행위 명사로 끝낸 헤드라인}} {{해당 시 "(최초 보도 MM-DD)"}}</h3>
-    <p class="orig">{{원문 제목}}</p>
-    <!-- 요약은 문장 하나당 li 하나, 3~4개. 첫 li에 가장 중요한 사실(누가 무엇을)을 둔다. 각주는 마지막 li 끝에 -->
-    <ul class="sum"><li>{{사실 1, 명사형 종결}}</li><li>{{사실 2}}</li><li>{{사실 3}}<sup><a href="{{기사 URL}}">[{{n}}]</a></sup></li></ul>
-    <!-- ", 원출처 자료[n]" 부분은 기사가 발표·통계·법령을 보도한 경우에만 둔다. 매체 자체 취재·인터뷰 기사면 지우고, 역추적 대상인데 못 찾았으면 지운다. 한국 매체는 게재 시각을 KST 하나만 쓴다. -->
-    <div class="src">{{매체}}({{권역}}), 게재 {{현지 시각}} ({{KST}}), 원출처 자료<sup><a href="{{원출처 URL}}">[{{n}}]</a></sup></div>
-  </article>
-  <h4 class="tier">참고 {{n}}건</h4>
-  <!-- 반복 .ref. 없으면 이 h4와 함께 생략 -->
-  <div class="ref"><span class="t">{{한국어 제목}}</span>{{한 줄 사실 요약 또는 "본문 미확인"}}<div class="m">{{매체}}, {{권역}}, {{MM-DD HH:MM KST}} <sup><a href="{{URL}}">[{{n}}]</a></sup></div></div>
-</section>
-
-<section class="srcs">
-  <h2>출처 목록</h2>
-  <ol class="sources">
-    <!-- 반복 li: 각주 번호 순 -->
-    <li>{{매체·기관}}, 「{{원문 제목}}」, {{게재 일시}}. <a href="{{URL}}">{{URL}}</a></li>
-  </ol>
-</section>
+<!-- 본문은 build.py가 이 파일의 <head>(스타일)와 <script>를 가져와 직접 만듭니다. 디자인은 <style>에서 수정합니다. -->
 <script>
 (function(){
   var PDF=location.hash==="#pdf";
