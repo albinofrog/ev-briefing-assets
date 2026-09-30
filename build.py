@@ -10,7 +10,7 @@
 
 작업 폴더 /tmp/ev, 산출물 /mnt/user-data/outputs.
 """
-import sys, os, re, json, html, glob, base64, subprocess, datetime as dt
+import sys, os, re, json, html, glob, base64, hashlib, subprocess, datetime as dt
 
 W = '/tmp/ev'
 FONTS = '/tmp/ev_fonts'
@@ -122,6 +122,14 @@ def nurl(u):
     u = re.sub(r'[?&]+$', '', u)
     u = re.sub(r'^https?://(www\.|m\.)?', '', u, flags=re.I)
     return u.rstrip('/').lower()
+
+
+def uhash(u):
+    return 'u:' + hashlib.sha1(nurl(u).encode()).hexdigest()[:12]
+
+
+def same_url(field, u):
+    return field == uhash(u) if field.startswith('u:') else nurl(field) == nurl(u)
 
 
 def read_sent():
@@ -278,7 +286,7 @@ def check(path, quiet=False):
         if not re.search('[가-힣]', it['headline']): E.append(f'{L}: 헤드라인은 한국어')
         for r in sent:
             ks, kn = key_sa(r['key']), key_sa(it['event_key'])
-            if nurl(r['url']) == nu:
+            if same_url(r['url'], it['url']):
                 E.append(f'{L}: 기수록 URL({r["date"]}) → 제외')
             elif ks == kn and ks[0] not in ('', '-') and not it.get('followup'):
                 msg = f'{L}: 장부의 "{r["key"]}"와 주체·행위 일치'
@@ -333,7 +341,7 @@ def render(path):
     fails = []
     core = [i for i in items if i['tier'] == 'core']
     refs = [i for i in items if i['tier'] == 'ref']
-    ledger = [f"{i['first_public'][:10]} | {i['axis']} | {i['url']} | {(i.get('origin') or {}).get('url') or '-'} | {i['event_key']}"
+    ledger = [f"{i['first_public'][:10]} | {i['axis']} | {uhash(i['url'])} | - | {i['event_key']}"
               for i in items]
     top1 = sorted([i for i in core if i.get('top')], key=lambda x: x['top'])
     if items:
@@ -355,7 +363,7 @@ def render(path):
     head = f"## {'제' + nnn + '호' if items else '발행 없음'} | 시작 {st['start']} | 기준 {c:%m-%d %H:%M}~{s:%m-%d %H:%M} KST | 핵심 {len(core)}·참고 {len(refs)} | 파일 {'PDF·HTML' if len(files) == 2 else ('HTML' if files else '없음')}"
     log = [head, '호출: ' + ' / '.join(f'{k} {v}' for k, v in calls.items()) + f' / 합계 {total}',
            '수확: ' + ', '.join(f'{k} {v}' for k, v in d.get('yield', {}).items()),
-           '수록: ' + ' ; '.join(f"{i['headline'][:20]} | {'핵심' if i['tier'] == 'core' else '참고'}" for i in items),
+           '수록: ' + ' ; '.join(f"{i['headline'][:20]} | {'핵심' if i['tier'] == 'core' else '참고'} R{i['relevance']}" for i in items),
            '탈락: ' + ' ; '.join(d.get('dropped', [])[:5]),
            '오류: ' + ' ; '.join(d.get('errors', []) + fails)]
     block = '\n'.join(log)
