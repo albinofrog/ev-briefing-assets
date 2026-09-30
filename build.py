@@ -56,7 +56,7 @@ SCHEMA = r'''
       "first_public": "2026-09-28 17:14",      // 사건 최초 공개 KST. 시각을 모르면 "2026-09-28"(기준일 당일 이후만 수록 가능)
       "body_read": true,
       "relevance": 1,                          // 관련도 1~3
-      "trust_fail": null,                      // 관련도 1·2인데 참고로 둘 때 사유: "self_promo" | "time_unverified"
+      "trust_fail": null,                      // 관련도 1·2인데 참고로 둘 때 사유: "self_promo" | "time_unverified" | "no_action"(의견·발언만 있음)
       "origin": {"url": "https://…", "outlet": "현대자동차그룹", "title": "…", "date": "2026-09-28"},  // 없으면 null
       "event_key": "현대자동차그룹 / 개발 / -"   // 주체 / 행위 명사 1개 / 대표 수치("|" 금지)
     }
@@ -323,7 +323,7 @@ def check(path, quiet=False):
         if o is not None and not (isinstance(o, dict) and isinstance(o.get('url'), str) and o['url'].startswith('http')):
             bad.append('origin(url 필수, 없으면 null)')
         if 'relevance' in it and it['relevance'] not in (1, 2, 3): bad.append('relevance(1~3)')
-        if it.get('trust_fail') not in (None, 'self_promo', 'time_unverified'): bad.append('trust_fail')
+        if it.get('trust_fail') not in (None, 'self_promo', 'time_unverified', 'no_action'): bad.append('trust_fail')
         if miss or bad:
             E.append(f'{L}: 필드 누락 {miss} / 형식 오류 {bad}'); continue
         if tier not in ('core', 'ref'): E.append(f'{L}: tier는 core|ref')
