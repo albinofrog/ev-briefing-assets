@@ -17,6 +17,7 @@ except ImportError:  # 없으면 구글 경로를 건너뛰고 Bing만 씀
     gnewsdecoder = None
 
 KEEP_DAYS = 10
+STUB_DAYS = 90  # 발행 시각 없는 목록(HTML) 항목은 키만 이 기간 남겨, 첫 화면에 다시 걸린 옛 기사를 새 항목으로 받지 않음
 VER = 3  # 형식이 바뀌면 올림. 다른 버전 항목은 버리고 다시 쌓음
 UA = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36',
       'Accept-Language': 'ko,en;q=0.8,zh;q=0.6,ja;q=0.5,de;q=0.4'}
@@ -143,6 +144,8 @@ def rss_items(url, region=''):
             d = dt.datetime(*t[:6], tzinfo=dt.timezone.utc)
             if raw and not HAS_TZ.search(raw) and region in TZ:  # 시간대 없는 표기는 매체 현지 시간
                 d = d.replace(tzinfo=ZoneInfo(TZ[region]))
+            elif region == '중국' and re.search(r'\bCST\b', raw):  # feedparser는 CST를 미국 중부(-6)로 읽음. 중국 표준시(+8)로 고침
+                d -= dt.timedelta(hours=14)
             pub = iso(min(d, NOW + dt.timedelta(minutes=5)))
         out.append({'title': html.unescape(re.sub(r'<[^>]+>', '', e.get('title', ''))).strip(), 'url': e.get('link', ''), 'pub': pub})
     return out
@@ -196,8 +199,21 @@ def main(out):
     if os.path.exists(path):
         old = [json.loads(l) for l in open(path, encoding='utf-8') if l.strip()]
     lim = iso(NOW - dt.timedelta(days=KEEP_DAYS))
-    old = [o for o in old if o.get('v') == VER and o['first_seen'] >= lim and not dom_in(o['url'], excl)
-           and (o['kind'] != 'watch' or keep_watch(o['src'][6:], o['title']))]
+    slim = iso(NOW - dt.timedelta(days=STUB_DAYS))
+    paths = [x for x in excl if '/' in x]  # 도메인/경로 형태(usatoday.com/press-release/ 등)
+    kept = []
+    for o in old:
+        if o.get('v') != VER or o['first_seen'] < slim: continue
+        if o.get('stub'):
+            kept.append(o); continue
+        if o['first_seen'] < lim:
+            if o['kind'] == 'list' and not o.get('pub'):  # 키만 남김
+                kept.append({'v': VER, 'key': o['key'], 'first_seen': o['first_seen'], 'src': o['src'], 'kind': 'list', 'stub': True})
+            continue
+        if dom_in(o['url'], excl) or any(x in o['url'] for x in paths): continue
+        if o['kind'] == 'watch' and not keep_watch(o['src'][6:], o['title']): continue
+        kept.append(o)
+    old = kept
     known = {o['key'] for o in old}
     known_g = {o['g'] for o in old if o.get('g')}
     fresh = iso(NOW - dt.timedelta(hours=FRESH_H))
@@ -212,7 +228,7 @@ def main(out):
     new = []
 
     def add(src, region, kind, it, first_seen, bf=False):
-        if not it['url'].startswith('http') or not it['title'] or dom_in(it['url'], excl):
+        if not it['url'].startswith('http') or not it['title'] or dom_in(it['url'], excl) or any(x in it['url'] for x in paths):
             return False
         if it['pub'] and it['pub'] < fresh:
             return False
@@ -229,7 +245,9 @@ def main(out):
         return True
 
     backfill = not old
+    seen_src = {o['src'] for o in old}
     for f in feeds:
+        bfill = backfill or f['name'] not in seen_src  # 새로 추가한 목록의 첫 수집도 기존 항목으로 처리
         st = {'ok': False, 'fetched': 0, 'matched': 0, 'new': 0, 'error': ''}
         try:
             items = rss_items(f['url'], f['region']) if f['how'] == 'rss' else html_items(f['url'], f['how'].split(':', 1)[1])
@@ -237,8 +255,8 @@ def main(out):
             for it in items:
                 if f['all'] or ok(it['title']):
                     st['matched'] += 1
-                    fs = it['pub'] if backfill and it['pub'] and it['pub'] <= iso(NOW) else iso(NOW)
-                    st['new'] += add(f['name'], f['region'], 'list', it, fs, backfill and not it['pub'])
+                    fs = it['pub'] if bfill and it['pub'] and it['pub'] <= iso(NOW) else iso(NOW)
+                    st['new'] += add(f['name'], f['region'], 'list', it, fs, bfill and not it['pub'])
         except Exception as e:  # noqa: BLE001
             st['error'] = f'{type(e).__name__}: {str(e)[:160]}'
         st['last_nonzero'] = last_nz('lists', f['name'], st['fetched'])

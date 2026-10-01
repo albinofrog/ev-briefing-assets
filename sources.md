@@ -91,9 +91,9 @@ Elektroauto, Elektroautos, E-Auto, E-Autos, Batterie, Akku, Lithium, Gebrauchtwa
 - 宁德时代巧克力换电 = 巧克力换电 = Chocolate Swap = 초콜릿 배터리교환
 
 ## E. 수집 제외·발견 전용 도메인
-`제외`는 수집 단계에서 버립니다(자체 매체·집계·SNS). `발견 전용`은 남기되 후보 점수를 낮추고, 리포트에는 원 매체 URL을 찾아 씁니다.
+`제외`는 수집 단계에서 버립니다(자체 매체·집계·SNS·유료 보도자료 면). `/`가 들어간 항목(도메인/경로)은 URL에 그 문자열이 있으면 버립니다. `발견 전용`은 남기되 후보 점수를 낮추고, 리포트에는 원 매체 URL을 찾아 씁니다.
 
-제외: chejiahao.autohome.com.cn, k.sina.com.cn, timeline.sohu.com, baijiahao.baidu.com, toutiao.com, tradingview.com, zhihu.com, weibo.com, tistory.com, blog.naver.com, post.naver.com, brunch.co.kr, medium.com, substack.com, note.com, x.com, twitter.com, facebook.com, linkedin.com, youtube.com, reddit.com, wikipedia.org, marketbeat.com
+제외: chejiahao.autohome.com.cn, k.sina.com.cn, aikahao.xcar.com.cn, user.guancha.cn, thecooldown.com, usatoday.com/press-release/, timeline.sohu.com, baijiahao.baidu.com, toutiao.com, tradingview.com, zhihu.com, weibo.com, tistory.com, blog.naver.com, post.naver.com, brunch.co.kr, medium.com, substack.com, note.com, x.com, twitter.com, facebook.com, linkedin.com, youtube.com, reddit.com, wikipedia.org, marketbeat.com
 발견 전용: sina.com.cn, sina.cn, sohu.com, 163.com, qq.com, msn.com, naver.com, daum.net, yahoo.com, yahoo.co.jp, news.google.com, bing.com, eletric-vehicles.com
 
 ## F. 관련도 주체
@@ -103,5 +103,28 @@ Elektroauto, Elektroautos, E-Auto, E-Autos, Batterie, Akku, Lithium, Gebrauchtwa
 - TWAICE | R1
 - Recurrent | R1
 - 민테크 = Mintech | R1
+- 피엠그로우 = PMGROW | R1
+- Geotab | R1
+- Volytica | R1
+- ACCURE | R1
+- Altelium | R1
+- Smartcar | R1
+- High Mobility | R1
+- Mobilisights | R1
+- cap hpi = Cap HPI | R1
 - NIO Power = 蔚来能源 = 니오파워 | R2
 - 巧克力换电 = Chocolate Swap = 초콜릿 배터리교환 | R2
+- DEKRA | R2
+- TÜV SÜD = TÜV Rheinland = TÜV | R2
+- Autovista = Autovista24 | R2
+- Black Book | R2
+- Manheim | R2
+- Cox Automotive | R2
+- J.D. Power | R2
+- 中国汽车流通协会 = CADA | R2
+- Ayvens = Arval = LeasePlan | R2
+- 현대캐피탈 = SK렌터카 = 롯데렌탈 | R2
+- 케이카 = 엔카 = Encar | R2
+- Carvana = CarMax | R2
+- 瓜子二手车 = 优信 | R2
+- 삼성화재 = 현대해상 = DB손해보험 = DB손보 = KB손해보험 | R2

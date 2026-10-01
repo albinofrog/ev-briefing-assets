@@ -20,6 +20,11 @@
 - 动力电池 溯源
 - 电池 数字护照
 - 电池健康度 评估 标准
+- "Battery Regulation" "state of health" OR "battery management system" access | GB:en
+- "Euro 7" battery durability | GB:en
+- CARB "state of health" EV
+- 자동차관리법 배터리
+- 중고차 성능점검 배터리
 
 ## 배터리 진단·데이터 기업
 - Aviloo battery | | !
@@ -38,6 +43,8 @@
 - used EV prices
 - gebrauchte Elektroautos Batterie
 - Restwert Elektroauto
+- used EV values | GB:en
+- EV battery health check | GB:en
 - 二手新能源车 保值
 - 中古EV 価格 | JP:ja
 - 中古EV 残価 | JP:ja
@@ -52,5 +59,5 @@
 ## 재사용·교환
 - 사용후 배터리
 - 宁德时代 巧克力换电
-- 蔚来 换电站
+- 蔚来 换电 合作 OR 投资 OR 协议
 - 换电 标准 政策

@@ -119,7 +119,8 @@ def prep():
     st = now_state()
     issue, wm, running, dfr = read_mem()
     base = kst(st['start']) - dt.timedelta(hours=FRESH_H)
-    st['cutoff'] = min(base, kst(wm) - dt.timedelta(hours=1)).astimezone(dt.timezone.utc).replace(microsecond=0).isoformat()
+    floor = kst(st['start']) - dt.timedelta(hours=96)  # 전달 실패가 이어져도 창은 96시간까지만
+    st['cutoff'] = max(floor, min(base, kst(wm) - dt.timedelta(hours=1))).astimezone(dt.timezone.utc).replace(microsecond=0).isoformat()
     s, c = kst(st['start']), kst(st['cutoff'])
     print(f"작업 시작: {st['start']} (KST {s:%Y-%m-%d %H:%M} {WEEK[s.weekday()]})")
     print(f"수록 기준: 최초 공개 {st['cutoff']} 이후 (KST {c:%m-%d %H:%M} ~ {s:%m-%d %H:%M}, 72시간 전과 직전 워터마크 1시간 전 중 이른 쪽)")
@@ -139,12 +140,13 @@ def prep():
     if age > dt.timedelta(hours=6):
         print('경고: 수집 데이터가 6시간 넘게 갱신되지 않음(GitHub Actions 확인 필요)')
     sent = read_sent()
-    seen = {r['url'] if r['url'].startswith('u:') else uhash(r['url']) for r in sent} if isinstance(sent, list) else set()
+    seen = {h for r in sent for h in [r['url'] if r['url'].startswith('u:') else uhash(r['url'])] + r['alt']} if isinstance(sent, list) else set()
     lo = (kst(st['cutoff']) - dt.timedelta(hours=12)).astimezone(dt.timezone.utc).isoformat()[:19]
     cands, newest = [], wm
     for ln in open(f'{W}/items.jsonl', encoding='utf-8'):
         if not ln.strip(): continue
         o = json.loads(ln)
+        if o.get('stub'): continue  # 수집기가 중복 방지용으로 남긴 키
         newest = max(newest, o['first_seen'])
         carried = o['key'] in dfr
         if not carried and (o.get('bf') or o['first_seen'][:19] <= wm[:19].replace('Z', '')): continue  # bf: 첫 수집 때 발행 시각 없이 잡힌 기존 항목
@@ -160,7 +162,7 @@ def prep():
         mem = [g['rep']] + g['others']
         pubs = [o['pub'] for o in mem if o['pub']]
         for o in mem:
-            meta[uhash(o['url'])] = {'own': o['pub'], 'min': min(pubs) if pubs else None}
+            meta[uhash(o['url'])] = {'own': o['pub'], 'min': min(pubs) if pubs else None, 'grp': [uhash(x['url']) for x in mem]}
     json.dump(meta, open(f'{W}/cand_meta.json', 'w'))
     keys = {}
     bands = [('점수 3 이상: 모두 검토', lambda g: g['score'] >= 3), ('점수 2', lambda g: g['score'] == 2),
@@ -208,7 +210,9 @@ def prep():
           f" / 상위 중 발견 전용 대표 {sum(1 for g in top if g['rep'].get('portal'))}개")
     if sugg: print('별칭 후보(별칭표에 없고 3개 이상 묶음에 나온 고유어, 같은 주체의 다른 표기가 있으면 sources.md D절에 추가): ' + ', '.join(sugg))
     print('  ' + ', '.join(f'{k} {v}' for k, v in sorted(by.items(), key=lambda x: -x[1])))
-    bad = [(k, v['error'][:60]) for k, v in status['lists'].items() if not v['ok']]
+    recent = lambda v: v.get('last_nonzero') and kst(st['start']) - kst(v['last_nonzero']) <= dt.timedelta(hours=48)
+    bad = [(k, v['error'][:60]) for k, v in status['lists'].items() if not v['ok'] and recent(v) and '발견 전용' not in k]  # 일시 실패만 직접 확인
+    dead = [k for k, v in status['lists'].items() if not v['ok'] and not recent(v)]
     stale = [k for k, v in {**status['lists'], **status.get('watch', {})}.items()
              if v.get('ok') and v.get('last_nonzero') and kst(st['start']) - kst(v['last_nonzero']) > dt.timedelta(hours=48)]
     wfail = [k for k, v in status.get('watch', {}).items() if not v['ok']]
@@ -218,6 +222,7 @@ def prep():
         urls = dict(re.findall(r'^- ([^|]+?) \| [^|]+\| [^|]+\| (https?://\S+)', open(f'{W}/sources.md').read(), re.M))
         print('수집 실패 목록(직접 확인 대상):')
         for k, e in bad: print(f'  {k} | {urls.get(k, "?")} | {e}')
+    if dead: print('장기 수집 실패 목록(48시간 넘게 받지 못함, 직접 확인하지 않음·교체 검토): ' + ', '.join(dead))
     st.update({'issue': issue, 'watermark_next': newest})
     json.dump(st, open(f'{W}/state.json', 'w'))
 
@@ -237,10 +242,10 @@ R2 = re.compile(r'passport|여권|护照|数字身份证|이력\s?관리|溯源|
 # 자동차 문맥 없이 쓰이면 다른 업계 뉴스까지 끌어오는 넓은 단어(데이터 접근·보험·수리권·진단 등)
 BROAD = re.compile(r'data' + S + 'access|right' + S + 'to' + S + 'repair|insur|보험|손해율|保険|Versicherung|diagnos|진단|電池診断|recycl|재활용|回收|\blease\b|\bleasing\b|\bOBD\b', re.I)
 AUTO = re.compile(r'\b(car|cars|vehicle|vehicles|auto|automotive|automaker|EV|EVs|motor|fleet|dealer)\b|electric|자동차|차량|전기차|완성차|중고차|车|車|Fahrzeug|Kfz|Auto|E-Auto', re.I)
-INS = re.compile(r'insurance|보험|车险|保険|Versicherung', re.I)
+INS = re.compile(r'insurance|보험|특약|车险|保険|Versicherung', re.I)
 BAT = re.compile(r'batter|배터리|电池|バッテリー|電池|Batterie|Akku', re.I)
 EXPL = re.compile(r'(확인|구매|점검|고르는|선택|읽는) 방법|점검 순서|하는 법|how' + S + 'to|FAQ|一文说清|가이드(?!라인)|\bguide\b|\btips\b|알아보|總結|总结', re.I)
-LAUNCH = re.compile(r'시승|test drive|first drive|首发|上市|新车|발표회|출시 기념', re.I)
+LAUNCH = re.compile(r'시승|test drive|first drive|首发|新车上市|新车|발표회|출시 기념', re.I)
 RGN_ORDER = ['한국', 'EU', '미국', '중국', '일본', '']
 TLD_RGN = [('.kr', '한국'), ('.jp', '일본'), ('.cn', '중국'), ('.de', 'EU'), ('.fr', 'EU'), ('.uk', 'EU'), ('.eu', 'EU'),
            ('.it', 'EU'), ('.es', 'EU'), ('.nl', 'EU')]
@@ -271,7 +276,10 @@ def src_info():
                 names = [x.strip() for x in ln[2:].split('=') if x.strip()]
                 for nm in names:
                     if re.fullmatch(r'[A-Za-z0-9 .,&\'-]+', nm):
-                        ents.append((re.compile(r'(?<![A-Za-z])' + re.escape(nm) + r'(?![A-Za-z])', re.I if len(nm) > 3 else 0), names[0]))
+                        neg = r'(?!\s+(Capital|Card|Marine|Fire|Steel|E&C|Heavy|Engineering|Rotem|Glovis))' if nm == 'Hyundai' else ''
+                        ents.append((re.compile(r'(?<![A-Za-z])' + re.escape(nm) + r'(?![A-Za-z])' + neg, re.I if len(nm) > 3 else 0), names[0]))
+                    elif re.fullmatch(r'[가-힣]{1,3}', nm):  # 짧은 한글 별칭은 앞이 끊기고 '적·문·산'이 뒤따르지 않을 때만(지리적, 산업부문)
+                        ents.append((re.compile(r'(?<![가-힣])' + nm + r'(?![적문산])'), names[0]))
                     else:
                         ents.append((nm.lower(), names[0]))
         _SRC = {'ev': ev, 'tier1': tier1, 'ents': ents, 'rel': rel}
@@ -294,8 +302,11 @@ def entities(t):
 def numbers(t):
     """제목의 수치 토큰. 강한 수치(3자리 이상, 소수, %·단위 붙음)는 '!'를 앞에 붙임."""
     out = set()
-    for m in re.finditer(r'(\d[\d,.]*\d|\d)\s*(%|퍼센트|万|억|조|GWh|MWh|kWh|대|座|站|곳|개사|bn|billion|million|亿)?', t):
+    for m in re.finditer(r'(\d[\d,.]*\d|\d)\s*(%|퍼센트|percent|per cent|割|成|万|억|조|GWh|MWh|kWh|대|座|站|곳|개사|bn|billion|million|亿)?', t, re.I):
         x, unit = m.group(1).replace(',', ''), m.group(2)
+        if unit in ('割', '成'):  # 8割 = 80%
+            try: x = str(round(float(x) * 10))
+            except ValueError: continue
         if len(x.replace('.', '')) < 2 or re.fullmatch(r'(19|20)\d\d', x): continue
         strong = len(x.replace('.', '')) >= 3 or '.' in x or bool(unit)
         out.add(('!' if strong else '') + x)
@@ -324,8 +335,9 @@ def same_event(a, b, r, df):
     if bool(DE_RX.search(a['title'])) != bool(DE_RX.search(b['title'])):
         if len({w for w in a['_pn'] & b['_lw'] if df.get(w, 0) <= 3} | {w for w in b['_pn'] & a['_lw'] if df.get(w, 0) <= 3}) >= 2:
             return True
-    if not (a['_en'] & b['_en']): return False
     strong = {x for x in a['_nu'] if x.startswith('!')} & {x for x in b['_nu'] if x.startswith('!')}
+    if strong and host(a['url']).split('.')[-2:] == host(b['url']).split('.')[-2:]: return True  # 같은 매체의 언어판
+    if not (a['_en'] & b['_en']): return False
     plain = {x.lstrip('!') for x in a['_nu']} & {x.lstrip('!') for x in b['_nu']}
     return bool(strong) or len(plain) >= 2 or r >= 0.65
 
@@ -356,7 +368,7 @@ def score_item(o):
     t, tags = o['title'], []
     if not AUTO.search(t) and not BAT.search(t):  # 자동차·배터리 문맥이 없으면 넓은 단어는 관련도로 치지 않음
         t = BROAD.sub(' ', t)
-    ent = sorted((r, nm) for nm, r in src_info()['rel'] if (nm in t if not re.fullmatch(r'[A-Za-z]+', nm) else re.search(r'(?<![A-Za-z])' + nm + r'(?![A-Za-z])', t)))
+    ent = sorted((r, nm) for nm, r in src_info()['rel'] if (nm in t if not re.fullmatch(r"[A-Za-z0-9 .&'-]+", nm) else re.search(r'(?<![A-Za-z])' + re.escape(nm) + r'(?![A-Za-z])', t)))
     if R1.search(t) or (INS.search(t) and BAT.search(t)):
         sc = 3; tags.append('R1:' + (R1.search(t) or INS.search(t)).group(0))
     elif ent and ent[0][0] == 1:
@@ -471,7 +483,8 @@ def read_sent():
     for ln in t.splitlines():
         parts = [x.strip() for x in ln.split(' | ')]
         if len(parts) >= 5 and re.match(r'\d{4}-\d{2}-\d{2}$', parts[0]):
-            rows.append({'date': parts[0], 'url': parts[2], 'key': parts[4], 'line': ln})
+            alt = ['u:' + h for h in parts[3][2:].split(',') if h] if parts[3].startswith('m:') else []
+            rows.append({'date': parts[0], 'url': parts[2], 'key': parts[4], 'alt': alt, 'line': ln})
     return rows
 
 
@@ -592,6 +605,8 @@ def check(path, quiet=False):
                 if fp < cutoff: E.append(f'{L}: 최초 공개가 3일 기준 밖 → 제외(새 단계면 새 단계 시각을 적음)')
             elif fp.date() < cutoff.date():
                 E.append(f'{L}: 날짜만 확인된 기사가 기준일({cutoff:%m-%d}) 이전 → 제외(시각을 확인했으면 시:분까지 적음)')
+            elif fp.date() == cutoff.date():
+                Wn.append(f'{L}: 날짜만 확인됐고 기준일({cutoff:%m-%d} {cutoff:%H:%M}) 당일 → 기준 시각 이전일 수 있으니 시각 확인(못 하면 time_unverified)')
             if fp > start + dt.timedelta(hours=1): E.append(f'{L}: 최초 공개가 작업 시작 이후')
             m = re.match(r'(\d{2})-(\d{2})(?: (\d{2}):(\d{2}))?$', it['published_kst'].strip())
             if not m:
@@ -651,8 +666,8 @@ def check(path, quiet=False):
         if not re.search('[가-힣]', it['headline']): E.append(f'{L}: 헤드라인은 한국어')
         for r in sent:
             ks, kn = key_sa(r['key']), key_sa(it['event_key'])
-            if same_url(r['url'], it['url']):
-                E.append(f'{L}: 기수록 URL({r["date"]}) → 제외')
+            if same_url(r['url'], it['url']) or (uhash(it['url']) in r['alt'] and not it.get('followup')):
+                E.append(f'{L}: 기수록 URL({r["date"]}, 같은 묶음 보도 포함) → 제외')
             elif ks == kn and ks[0] not in ('', '-') and not it.get('followup'):
                 msg = f'{L}: 장부의 "{r["key"]}"와 주체·행위 일치'
                 if ks[1] in GENERIC_ACT: Wn.append(msg + ' → 같은 사건이면 제외, 다른 사건이면 그대로')
@@ -731,7 +746,18 @@ def render(path):
     fails = []
     core = [i for i in items if i['tier'] == 'core']
     refs = [i for i in items if i['tier'] == 'ref']
-    ledger = [f"{i['first_public'][:10]} | {i['axis']} | {uhash(i['url'])} | - | {i['event_key']}"
+    try:
+        cmeta = json.load(open(f'{W}/cand_meta.json'))
+    except (FileNotFoundError, ValueError):
+        cmeta = {}
+
+    def alts(i):  # 같은 묶음의 다른 보도와 원출처 URL도 장부에 남겨 다음 회차에 다시 후보로 오지 않게 함
+        own = uhash(i['url'])
+        hs = [uhash(i['origin']['url'])] if i.get('origin') and i['origin'].get('url') else []
+        hs = [h for h in hs + cmeta.get(own, {}).get('grp', []) if h != own]
+        hs = list(dict.fromkeys(h[2:] for h in hs))[:12]  # 원출처 먼저, 최대 12개
+        return 'm:' + ','.join(hs) if hs else '-'
+    ledger = [f"{i['first_public'][:10]} | {i['axis']} | {uhash(i['url'])} | {alts(i)} | {i['event_key']}"
               for i in items]
     top1 = sorted([i for i in core if i.get('top')], key=lambda x: x['top'])
     if items:
@@ -934,7 +960,7 @@ def seen_cmd(urls):
         sys.exit('장부(/tmp/ev/sent.md)를 읽지 못해 확인할 수 없음')
     if not urls or any(not u.startswith('http') for u in urls):
         sys.exit('사용법: python3 build.py seen https://... [https://...]')
-    hs = {r['url'] if r['url'].startswith('u:') else uhash(r['url']) for r in sent}
+    hs = {h for r in sent for h in [r['url'] if r['url'].startswith('u:') else uhash(r['url'])] + r['alt']}
     for u in urls:
         print(('기수록(제외) ' if uhash(u) in hs else '신규 ') + u)
 
