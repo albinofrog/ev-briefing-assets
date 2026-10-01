@@ -184,8 +184,13 @@ def prep():
     top = [g for g in groups if g['score'] >= 3]
     known_names = set(aliases()) | {re.sub(r'[\s·.,()]', '', nm).lower() for nm, _ in src_info()['rel']}
     freq = {}
+
+    def mid_caps(t):  # 제목식 대문자 표기가 아닌 제목에서 문장 중간 대문자 단어만(고유명사 후보)
+        ws = re.findall(r'[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]{3,}', t)
+        if not ws or sum(w[0].isupper() for w in ws) / len(ws) > 0.5: return set()
+        return {w.lower() for w in ws[1:] if w[0].isupper() and w.lower() not in STOP and not ev_ok(w)}
     for g in groups:
-        for w in set().union(*({x for x in o['_pn']} for o in [g['rep']] + g['others'])):
+        for w in set().union(*(mid_caps(o['title']) for o in [g['rep']] + g['others'])):
             if w not in known_names: freq[w] = freq.get(w, 0) + 1
     sugg = [w for w, c in sorted(freq.items(), key=lambda x: -x[1]) if c >= 3][:10]
     print(f"후보 {len(cands)}건 → 묶음 {len(groups)}개 → /tmp/ev/candidates.md (워터마크 {wm} 이후 처음 수집된 항목, 이월 {sum(1 for o in cands if o['key'] in dfr)}건)")
@@ -209,7 +214,8 @@ def prep():
 
 R1 = re.compile(r'\bSOH\b|state of health|battery (health|score|check|test|certificate|report)|배터리 (상태|건강|수명|성능|점수|진단|인증)|안전지수|'
                 r'잔존가치|잔가|감가|residual value|retains? (their |its )?value|depreciation|Restwert|Wertverlust|残価|残存価値|減価|保值|\bOBD\b|'
-                r'data access|Data Act|right to repair|수리권|데이터 개방|차량 데이터|vehicle data|电池健康|电池检测|バッテリー(診断|状態|劣化)|Batterie(zustand|zertifikat|test|check)', re.I)
+                r'data access|Data Act|right to repair|수리권|데이터 개방|차량 데이터|vehicle data|电池健康|电池检测|バッテリー(診断|状態|劣化)|Batterie(zustand|zertifikat|test|check)|'
+                r'degradation|(lose|lost|loses|retain)s? (about |only )?[\d.]+% of (their |its )?capacity|capacity (loss|fade)|배터리 열화|电池衰减|容量衰减|劣化率', re.I)
 R2 = re.compile(r'passport|여권|护照|이력\s?관리|溯源|second.?life|재사용|재제조|사용후|换电|battery swap|배터리 교환|recycl|回收|재활용|'
                 r'used (ev|car|electric)|second.?hand|pre.?owned|중고|二手|中古|Gebraucht|换电站|insurance|보험|车险|保険|Versicherung|diagnos|진단|telematics|텔레매틱스|\bleas(e|ing)\b|리스 만기|리스사|잔가', re.I)
 INS = re.compile(r'insurance|보험|车险|保険|Versicherung', re.I)
@@ -282,7 +288,8 @@ vehicle vehicles fahrzeug fahrzeuge cars auto autos with from into over under th
 while more than first year years new neue neuen news report reports says said plans plan launch launches million billion euro euros dollar
 china chinese europe european germany german america american japan japanese korea korean india british britain britische unter nach
 jetzt wird werden sind eine einen einem einer mehr ohne sowie gegen beim zum zur über durch auch noch nicht ihre seine soll sollen week
-market markets price prices sales production produktion company companies group charging charge laden ladepark lithium'''.split())
+market markets price prices sales production produktion company companies group charging charge laden ladepark lithium
+january february march april june july august september october november december januar februar juni juli oktober dezember'''.split())
 
 
 def pnouns(t):
