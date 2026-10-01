@@ -237,7 +237,7 @@ R1 = re.compile(r'\bSOH\b|state' + S + 'of' + S + 'health|battery' + S + '(healt
                 r'잔존가치|잔가|감가|residual' + S + 'values?|retains?' + S + '(their |its )?value|depreciation|(used' + S + '|second' + S + 'hand )?(EV|electric' + S + 'vehicle)s?' + S + 'values?|'
                 r'Restwert|Wertverlust|残価|残存価値|減価|\bOBD\b|data' + S + 'access|Data' + S + 'Act|right' + S + 'to' + S + 'repair|in' + S + 'vehicle' + S + 'data|'
                 r'수리권|데이터 개방|차량 데이터|자동차 데이터|vehicle' + S + 'data|Fahrzeugdaten|Datenzugang|汽车数据|车辆数据|車両データ|'
-                r'电池健康|电池检测|(バッテリー|蓄?電池)の?(診断|状態|劣化)|電池診断|Batterie(zustand|zertifikat|gesundheit|test|check)|'
+                r'电池健康|电池检测|(バッテリー|(?<!蓄)電池)の?(診断|状態|劣化)|電池診断|Batterie(zustand|zertifikat|gesundheit|test|check)|'
                 r'degradation|(lose|lost|loses|retain)s?' + S + '(about |only )?[\d.]+%' + S + '(of|per)|capacity' + S + '(loss|fade)|batter(y|ies)' + S + '(degrade|degradation|durability)|durability|'
                 r'배터리 열화|电池衰减|容量衰减|劣化率', re.I)
 R2 = re.compile(r'passport|여권|护照|数字身份证|이력\s?관리|溯源|second' + S + 'life|재사용|재제조|사용후|사용 후 배터리|은퇴(한)? 배터리|退役电池|换电|battery' + S + 'swap|배터리 교환|recycl|回收|재활용|リサイクル|'
@@ -250,6 +250,8 @@ INS = re.compile(r'insurance|보험|특약|车险|保険|Versicherung', re.I)
 BAT = re.compile(r'batter|배터리|电池|バッテリー|電池|Batterie|Akku', re.I)
 EXPL = re.compile(r'(확인|구매|점검|고르는|선택|읽는) 방법|점검 순서|하는 법|how' + S + 'to|FAQ|一文说清|가이드(?!라인)|\bguide\b|\btips\b|알아보|總結|总结', re.I)
 LAUNCH = re.compile(r'시승|test drive|first drive|首发|新车上市|新车|발표회|출시 기념', re.I)
+# ESS·정치형 축전지(차량 사용후 배터리의 ESS 재사용 포함)는 판정에서 관련도 3(참고 이하)이므로 정렬도 낮춤
+ESS = re.compile(r'\bB?ESS\b|蓄電池|储能|에너지\s?저장|Energiespeicher|energy' + S + 'storage|stationary' + S + 'storage|grid' + S + 'scale', re.I)
 RGN_ORDER = ['한국', 'EU', '미국', '중국', '일본', '']
 TLD_RGN = [('.kr', '한국'), ('.jp', '일본'), ('.cn', '중국'), ('.de', 'EU'), ('.fr', 'EU'), ('.uk', 'EU'), ('.eu', 'EU'),
            ('.it', 'EU'), ('.es', 'EU'), ('.nl', 'EU')]
@@ -391,6 +393,7 @@ def score_item(o):
         sc = 0
     if EXPL.search(t): sc -= 2; tags.append('해설형-2')
     if LAUNCH.search(t): sc -= 1; tags.append('신차-1')
+    if ESS.search(t): sc -= 1; tags.append('ESS-1')
     return sc, tags
 
 

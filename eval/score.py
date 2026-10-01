@@ -84,6 +84,8 @@ def main():
                 ok, why = e['tag'] in g['head'], f"표시 {e['tag']} {'있음' if e['tag'] in g['head'] else '없음'}"
             elif 'no_tag' in e:
                 ok, why = e['no_tag'] not in g['head'], f"표시 {e['no_tag']} {'없음' if e['no_tag'] not in g['head'] else '있음'}"
+            elif 'band_max' in e:
+                ok, why = g['band'] <= e['band_max'], f"점수 구간 {g['band']}"
             else:
                 ok, why = g['band'] >= e['band_min'], f"점수 구간 {g['band']}"
         else:
@@ -98,7 +100,9 @@ def main():
             got = {'decision': {'core': '핵심', 'ref': '참고'}[hit['tier']] if hit else '제외'}
             if hit:
                 got['relevance'] = hit.get('relevance'); got['trust_fail'] = hit.get('trust_fail')
-            bad = [f'{k} 기대 {v} / 결과 {got.get(k)}' for k, v in e.items() if got.get(k) != v]
+            bad = [f'{k} 기대 {v} / 결과 {got.get(k)}' for k, v in e.items() if k != 'decision_in' and got.get(k) != v]
+            if 'decision_in' in e and got['decision'] not in e['decision_in']:
+                bad.append(f"decision 기대 {'·'.join(e['decision_in'])} / 결과 {got['decision']}")
             ok, why = not bad, '; '.join(bad) or got['decision']
         res.append((c, ok, why))
 
