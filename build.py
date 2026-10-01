@@ -9,11 +9,21 @@
   python3 build.py failpush 단계   푸시 문구 앞에 [실패] 단계 표시 추가
   python3 build.py seen URL ...    직접 찾은 기사 URL이 장부에 있는지 확인
 
+  자가개선(전달 뒤):
+  python3 build.py probe           이번 회차 놓침 탐지 검색어 4개(/tmp/ev/rules.md 9절에서 /tmp/ev/metrics.md 회차 수로 순환)
+  python3 build.py board FILE [nodeliver]   briefing.json → 피드백 보드 db 쓰기 목록(/tmp/ev/board.json). 전달 실패면 nodeliver(항목 제외)
+  python3 build.py guard OLD NEW   rules.md 고정 줄(사업 맥락·금지 항목·예산·금지 출처)이 바뀌었으면 종료 1
+  python3 build.py feedback DIR SINCE   보드에서 받은 문서(DIR/<컬렉션>/<id>.json) → 신호(/tmp/ev/signals.md)·정답 줄(/tmp/ev/gold.txt)
+  python3 build.py trace CODE URL[|제목] ...   URL(못 찾으면 제목)이 수집·후보·장부 어디서 빠졌는지 원인 코드 부여, signals.md에 추가
+  python3 build.py yield FILE      회차 지표 한 줄(/tmp/ev/metrics_line.txt)과 검색어별 최근 10회 기여(/tmp/ev/metrics.md 이력 사용)
+  python3 build.py snapshot DIR    이번 회차 입력을 평가 세트 스냅샷으로 저장(수록 기준 8일 전 이후 항목만)
+  python3 build.py cases SNAPDIR GOLD OUT   정답 줄(GOLD)을 그 스냅샷의 판정 문항 파일(OUT)로 변환
+
 작업 폴더 /tmp/ev, 산출물 /mnt/user-data/outputs.
 """
 import sys, os, re, json, html, glob, base64, hashlib, subprocess, unicodedata, datetime as dt
 
-W = '/tmp/ev'
+W = os.environ.get('EV_W', '/tmp/ev')  # 평가 게이트는 EV_W=/tmp/evgate로 실제 작업 폴더와 분리
 FONTS = '/tmp/ev_fonts'
 OUT = '/mnt/user-data/outputs'
 REPO = 'https://raw.githubusercontent.com/albinofrog/ev-briefing-assets/main/'
@@ -1011,6 +1021,240 @@ def trim(what):
         print(f'{W}/run_log_trimmed.md (최근 {min(15, len(blocks))}회) → memory_write로 덮어씀')
 
 
+# ---------- 자가개선 ----------
+CAUSE = {'FP': '불필요 수록(사용자)', 'OVER': '등급 과대(사용자: 참고로 충분)', 'UNDER': '등급 과소(사용자: 핵심이어야)',
+         'C1': '미수집(목록·검색어 공백)', 'C2': '수집됐으나 수록 기준 이전 판정', 'C3': '장부에 있음(중복 판정)',
+         'C4': '후보 하위 구간(점수 공백)', 'C5': '후보 상위 구간인데 미수록(판정 공백)', 'C6': '이전 회차가 이미 보고 넘김(판정 공백)',
+         'C7': '수록됨(놓침 아님)'}
+
+
+def doc_rows(d, coll):
+    out = []
+    for f in sorted(glob.glob(f'{d}/{coll}/*.json')):
+        try:
+            o = json.load(open(f, encoding='utf-8'))
+        except ValueError:
+            continue
+        if isinstance(o.get('data'), dict): o = {**o['data'], '_id': o.get('id') or o.get('doc_id')}
+        o.setdefault('_id', os.path.basename(f)[:-5])
+        out.append(o)
+    return out
+
+
+def probe():
+    t = open(f'{W}/rules.md', encoding='utf-8').read()
+    sec = t.split('## 9.', 1)[1] if '## 9.' in t else ''
+    qs = re.findall(r'^\s+\d+\.\s+(.+?)\s*$', sec, re.M)
+    if not qs: sys.exit('rules.md 9절 놓침 탐지 검색어 없음')
+    runs = len([l for l in (open(f'{W}/metrics.md').read().splitlines() if os.path.exists(f'{W}/metrics.md') else [])
+                if re.match(r'\d{4}-\d\d-\d\d \| ', l)])  # 발행 없는 날에도 도는 회차 수
+    k = (runs * 4) % len(qs)
+    for i in range(4): print(qs[(k + i) % len(qs)])
+
+
+def board(path, delivered=True):
+    d = json.load(open(path, encoding='utf-8')); st = now_state()
+    issue = st['issue'] + 1
+    writes = []
+    for n, i in enumerate(d['items'] if delivered else [], 1):  # 전달 실패면 호 번호가 안 올라가므로 항목은 쓰지 않음
+        s = i.get('summary')
+        writes.append({'op': 'set', 'collection': 'items', 'doc_id': f'i{issue:03d}-{n:02d}', 'data': {
+            'issue': issue, 'n': n, 'tier': i['tier'], 'top': i.get('top') or 0, 'axis': i['axis'], 'region': i['region'],
+            'headline': i['headline'], 'summary': ' '.join(s) if isinstance(s, list) else (s or ''), 'url': i['url'],
+            'outlet': i.get('outlet', ''), 'published': i.get('published_kst', ''), 'relevance': i.get('relevance'),
+            'trust_fail': i.get('trust_fail') or '', 'event_key': i.get('event_key', ''), 'key': uhash(i['url']),
+            'date': kst(st['start']).strftime('%Y-%m-%d')}})
+    if os.path.exists(f'{W}/metrics.json'):  # yield가 만든 이번 회차 지표
+        m = json.load(open(f'{W}/metrics.json'))
+        writes.append({'op': 'set', 'collection': 'metrics', 'doc_id': 'm' + re.sub(r'[^0-9]', '', st['start'])[:12], 'data': m})
+    if os.path.exists(f'{W}/proposals_new.json'):  # 이번 회차 새 개선안 [{id,title,layer,evidence,change,effect}]
+        for pr in json.load(open(f'{W}/proposals_new.json', encoding='utf-8')):
+            writes.append({'op': 'set', 'collection': 'proposals', 'doc_id': pr['id'], 'data': {
+                **{k: pr.get(k, '') for k in ('title', 'layer', 'evidence', 'change', 'effect')},
+                'status': 'pending', 'issue': issue, 'created': st['start']}})
+    json.dump(writes, open(f'{W}/board.json', 'w'), ensure_ascii=False)
+    print(f'{W}/board.json ({len(writes)}건: 제{issue:03d}호 항목·지표·새 개선안) → ArtifactData batch(writes=이 파일 내용, 50건씩)')
+
+
+def feedback(d, since):
+    items = {o['_id']: o for o in doc_rows(d, 'items')}
+    sig, gold = [], []
+    vmap = {'useful': None, 'noise': 'FP', 'should_drop': 'FP', 'should_ref': 'OVER', 'should_core': 'UNDER'}
+    lab = {'useful': None, 'noise': '제외', 'should_drop': '제외', 'should_ref': '참고', 'should_core': '핵심'}
+    cnt = {'평가': 0, '유용': 0}
+    for f in doc_rows(d, 'feedback'):
+        if (f.get('at') or '') <= since: continue
+        it = items.get(f['_id'])
+        v = f.get('verdict')
+        if not it or v not in vmap: continue
+        cnt['평가'] += 1; cnt['유용'] += v == 'useful'
+        tier = {'core': '핵심', 'ref': '참고'}[it['tier']]
+        gold.append(f"{it['issue']} | {it['key']} | {it['url']} | {lab[v] or tier} | {(f.get('note') or '').strip()[:80]}")  # 같은 해시 줄은 gold.md에서 교체
+        if vmap[v]:
+            sig.append(f"{vmap[v]} | 제{it['issue']:03d}호 | {it['headline'][:40]} | {it['url']} | R{it.get('relevance')} {tier} | {(f.get('note') or '').strip()[:80]}")
+    last = max([o.get('issue') or 0 for o in items.values()] + [0]) or '-'  # 제보는 보드의 최신 호에 붙임
+    for m in doc_rows(d, 'missed'):
+        if (m.get('at') or '') <= since or not m.get('url'): continue
+        sig.append(f"MISS-U | - | 사용자 제보 | {m['url'].strip()} | - | {(m.get('note') or '').strip()[:80]}")
+        gold.append(f"{last} | {uhash(m['url'])} | {m['url'].strip()} | 수록 | {(m.get('note') or '').strip()[:80]}")
+    props = {p['_id']: p for p in doc_rows(d, 'proposals')}
+    dec = []
+    for x in doc_rows(d, 'decisions'):
+        p = props.get(x['_id'])
+        if p and p.get('status') == 'pending' and x.get('decision') in ('approve', 'reject'):
+            dec.append(f"{x['_id']} | {x['decision']} | {p.get('layer', '')} | {p.get('title', '')[:60]} | {(x.get('note') or '').strip()[:80]}")
+    open(f'{W}/signals.md', 'w').write('\n'.join(sig) + ('\n' if sig else ''))
+    open(f'{W}/gold.txt', 'w').write('\n'.join(gold) + ('\n' if gold else ''))
+    open(f'{W}/decisions.txt', 'w').write('\n'.join(dec) + ('\n' if dec else ''))
+    json.dump(cnt, open(f'{W}/fb_count.json', 'w'))
+    latest = max([o.get('at') or '' for c in ('feedback', 'missed', 'decisions') for o in doc_rows(d, c)] + [since])
+    print(f"신호 {len(sig)}줄 → {W}/signals.md (MISS-U는 trace로 원인 확인)\n정답 {len(gold)}줄 → {W}/gold.txt\n"
+          f"처리할 결정 {len(dec)}건 → {W}/decisions.txt\n평가 {cnt['평가']}건 중 유용 {cnt['유용']}건\nfb_seen 다음 값: {latest}")
+    for l in dec: print('  결정: ' + l)
+
+
+def cand_bands():
+    out, band = {}, None
+    if not os.path.exists(f'{W}/candidates.md'): return out
+    for ln in open(f'{W}/candidates.md', encoding='utf-8'):
+        if ln.startswith('## '): band = 3 if '3 이상' in ln else 2 if '점수 2' in ln else 1
+        for u in re.findall(r'https?://\S+', ln):
+            m = re.match(r'\s*(?:↳ )?(c\d+(?:-\d+)?)', ln.strip().lstrip('↳ '))
+            out.setdefault(uhash(u.rstrip(')')), (band, m.group(1) if m else '?'))
+    return out
+
+
+def trace(code, urls):
+    st = now_state()
+    items = {}
+    for ln in open(f'{W}/items.jsonl', encoding='utf-8'):
+        if ln.strip():
+            o = json.loads(ln)
+            if not o.get('stub'): items[uhash(o['url'])] = o
+    sent = read_sent(); sent = sent if isinstance(sent, list) else []
+    sh = {h for r in sent for h in [r['url'] if r['url'].startswith('u:') else uhash(r['url'])] + r['alt']}
+    bands = cand_bands()
+    try:
+        bj = json.load(open(f'{W}/briefing.json', encoding='utf-8')); inc = {uhash(i['url']) for i in bj['items']}
+        inc |= {uhash(i['origin']['url']) for i in bj['items'] if i.get('origin') and i['origin'].get('url')}
+    except (FileNotFoundError, ValueError):
+        inc = set()
+    meta = json.load(open(f'{W}/cand_meta.json')) if os.path.exists(f'{W}/cand_meta.json') else {}
+    grp_inc = {h for k, v in meta.items() if k in inc for h in v.get('grp', [])} | inc
+    lists = {re.sub(r'^(www\.|m\.)', '', host(m)) for m in re.findall(r'^- [^|]+\| [^|]+\| [^|]+\| (https?://\S+)', open(f'{W}/sources.md').read(), re.M)}
+    lines = []
+    by_title = {}
+    for o in items.values(): by_title.setdefault(ntitle(o['title']), o)
+    for arg in urls:
+        u, _, ttl = arg.partition('|')  # 검색 결과는 'URL|제목'으로 넘기면 제목으로도 수집 이력을 찾음
+        u = u.strip(); h = uhash(u); o = items.get(h); hs = re.sub(r'^(www\.|m\.)', '', host(u))
+        if not o and ttl.strip():
+            o = by_title.get(ntitle(ttl.strip()))
+            if o: h = uhash(o['url'])
+        if h in grp_inc: c, why = 'C7', '이번 호 수록 묶음'
+        elif h in sh: c, why = 'C3', '장부에 있음'
+        elif h in bands:
+            b, cn = bands[h]; c, why = ('C4' if b <= 1 else 'C5'), f'{cn} 점수 구간 {b}'
+        elif o:
+            pub = o.get('pub') or o['first_seen']
+            if pub[:19] < st['cutoff'][:19]: c, why = 'C2', f"게재·수집 {pub[:16]}Z가 수록 기준 이전"
+            else: c, why = 'C6', f"{o['src']} {o['first_seen'][:16]}Z 수집, 이전 회차 후보"
+            why += f" | 출처 {o['src']}"
+        else:
+            c, why = 'C1', f"{hs} {'목록에 있음(제목 필터 단어 탈락 의심)' if any(hs.endswith(x) for x in lists) else '목록·검색어 결과에 없음'}"
+        lines.append(f"{code}:{c} | - | {CAUSE[c]} | {u} | - | {why}")
+    with open(f'{W}/signals.md', 'a') as fh:
+        fh.write('\n'.join(lines) + '\n')
+    print('\n'.join(lines))
+
+
+def yield_cmd(path):
+    st = now_state()
+    d = json.load(open(path, encoding='utf-8'))
+    meta = json.load(open(f'{W}/cand_meta.json')) if os.path.exists(f'{W}/cand_meta.json') else {}
+    src = {}
+    for ln in open(f'{W}/items.jsonl', encoding='utf-8'):
+        if ln.strip():
+            o = json.loads(ln)
+            if not o.get('stub'): src[uhash(o['url'])] = o['src']
+    contrib = {}
+    for i in d['items']:
+        hs = set(meta.get(uhash(i['url']), {}).get('grp', [])) | {uhash(i['url'])}
+        for s in {src[h] for h in hs if h in src}: contrib[s] = contrib.get(s, 0) + 1
+    sig = open(f'{W}/signals.md').read().splitlines() if os.path.exists(f'{W}/signals.md') else []
+    miss = sum(1 for l in sig if re.match(r'MISS-U:C[1-6]|MISS-P:C[12456]', l))
+    fb = json.load(open(f'{W}/fb_count.json')) if os.path.exists(f'{W}/fb_count.json') else {'평가': 0, '유용': 0}
+    core = sum(1 for i in d['items'] if i['tier'] == 'core')
+    calls = sum(v for v in d.get('calls', {}).values() if isinstance(v, int))
+    issue = st['issue'] + (1 if d['items'] else 0)
+    line = (f"{kst(st['start']):%Y-%m-%d} | {issue} | 핵심 {core} 참고 {len(d['items']) - core} | 웹 {calls} | 놓침 {miss} | "
+            f"평가 {fb['평가']} 유용 {fb['유용']} | 기여 " + (';'.join(f'{k}:{v}' for k, v in sorted(contrib.items())) or '-'))
+    open(f'{W}/metrics_line.txt', 'w').write(line + '\n')
+    json.dump({'issue': issue, 'date': f"{kst(st['start']):%Y-%m-%d}", 'core': core, 'ref': len(d['items']) - core, 'calls': calls,
+               'missed': miss, 'rated': fb['평가'], 'useful': fb['유용'], 'contrib': contrib}, open(f'{W}/metrics.json', 'w'), ensure_ascii=False)
+    print('이번 회차: ' + line)
+    hist = [l for l in (open(f'{W}/metrics.md').read().splitlines() if os.path.exists(f'{W}/metrics.md') else [])
+            if re.match(r'\d{4}-\d\d-\d\d \| ', l)][-9:] + [line]
+    tot = {}
+    for l in hist:
+        for part in l.split('| 기여 ', 1)[-1].split(';'):
+            mm = re.match(r'(.+):(\d+)$', part.strip())
+            if mm: tot[mm.group(1)] = tot.get(mm.group(1), 0) + int(mm.group(2))
+    status = json.load(open(f'{W}/status.json'))
+    print(f'최근 {len(hist)}회 수록 기여(0이면 교체 후보, 자동 추가분만 자동 철회):')
+    for q, v in status.get('watch', {}).items():
+        c = tot.get('watch:' + q, 0)
+        if c == 0: print(f"  0 | watch:{q} | 이번 새 항목 {v.get('new', 0)}")
+    for k, v in status['lists'].items():
+        if tot.get(k, 0) == 0: print(f"  0 | {k} | 이번 새 항목 {v.get('new', 0)}")
+    print('  기여 있음: ' + ', '.join(f'{k} {v}' for k, v in sorted(tot.items(), key=lambda x: -x[1])))
+
+
+def snapshot(dst):
+    import shutil
+    st = now_state(); os.makedirs(dst, exist_ok=True)
+    lo = (kst(st['cutoff']) - dt.timedelta(days=8)).astimezone(dt.timezone.utc).isoformat()[:19]
+    n = 0
+    with open(f'{dst}/items.jsonl', 'w', encoding='utf-8') as fh:
+        for ln in open(f'{W}/items.jsonl', encoding='utf-8'):
+            if not ln.strip(): continue
+            o = json.loads(ln)
+            if o.get('stub') or (o.get('pub') or o['first_seen'])[:19] >= lo or o['first_seen'][:19] >= lo:
+                fh.write(ln if ln.endswith('\n') else ln + '\n'); n += 1
+    for f in ('status.json', 'memstate.md', 'sent.md'): shutil.copy(f'{W}/{f}', f'{dst}/{f}')
+    open(f'{dst}/start.txt', 'w').write(st['start'] + '\n')
+    print(f'{dst}: 항목 {n}건, 작업 시작 {st["start"]}, 회차 {st["issue"] + 1}')
+
+
+def cases(snapdir, gold, out):
+    name = os.path.basename(snapdir.rstrip('/'))
+    m = re.search(r'(\d+)$', name); iss = m.group(1).lstrip('0') if m else None
+    cs = []
+    for ln in open(gold, encoding='utf-8'):
+        p = [x.strip() for x in ln.split('|')]
+        if len(p) < 5 or (iss and p[0] not in (iss, '-')): continue
+        u = re.sub(r'^https?://(www\.|m\.)?', '', p[2]).rstrip('/')
+        exp = {'decision_in': ['핵심', '참고']} if p[3] == '수록' else {'decision': p[3]}
+        cs.append({'id': f'G{len(cs) + 1:02d}', 'layer': 'judge', 'status': 'reviewed', 'source': 'feedback',
+                   'match': u[:120], 'expect': exp, 'reason': p[4] or '사용자 보드 평가'})
+    json.dump({'snapshot': name, 'note': f'피드백 보드 평가로 만든 판정 문항({name})', 'cases': cs},
+              open(out, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+    print(f'{out}: 판정 문항 {len(cs)}개')
+
+
+LOCK = [r'^## 0\.', r'^B\.once는', r'쓰지 않습니다:', r'출처로 쓰지 않는 곳', r'최대 25회', r'최대 15회', r'40회 이하', r'개선 단계 웹 호출']
+
+
+def guard(old, new):
+    """승인 개선안이 고정 원칙(가.3) 줄을 건드리지 않았는지 확인."""
+    pick = lambda p: [l for l in open(p, encoding='utf-8').read().splitlines() if any(re.search(x, l) for x in LOCK)]
+    a, b = pick(old), pick(new)
+    if a != b:
+        print('고정 줄 변경 감지(반영 불가):'); [print('  - ' + l[:100]) for l in a if l not in b]; [print('  + ' + l[:100]) for l in b if l not in a]
+        sys.exit(1)
+    print(f'고정 줄 {len(a)}개 그대로')
+
+
 if __name__ == '__main__':
     a = sys.argv[1:]
     if not a: sys.exit(__doc__)
@@ -1021,4 +1265,12 @@ if __name__ == '__main__':
     elif a[0] == 'trim': trim(a[1])
     elif a[0] == 'failpush': failpush(a[1])
     elif a[0] == 'seen': seen_cmd(a[1:])
+    elif a[0] == 'probe': probe()
+    elif a[0] == 'board': board(a[1], 'nodeliver' not in a[2:])
+    elif a[0] == 'guard': guard(a[1], a[2])
+    elif a[0] == 'feedback': feedback(a[1], a[2] if len(a) > 2 else '')
+    elif a[0] == 'trace': trace(a[1], a[2:])
+    elif a[0] == 'yield': yield_cmd(a[1])
+    elif a[0] == 'snapshot': snapshot(a[1])
+    elif a[0] == 'cases': cases(a[1], a[2], a[3])
     else: sys.exit(__doc__)
