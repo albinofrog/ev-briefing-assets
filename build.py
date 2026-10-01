@@ -171,12 +171,12 @@ def prep():
                 keys[f'c{n}'] = o['key']
                 when = f"{kst(o['pub']):%m-%d %H:%M} KST" if o['pub'] else f"처음 확인 {kst(o['first_seen']):%m-%d %H:%M}"
                 if g['score'] <= 1:
-                    fh.write(f"c{n} | {o['title'][:70]} | {o['url']}{' (+' + str(len(g['others'])) + '건)' if g['others'] else ''}\n")
+                    fh.write(f"c{n} | {when} | {o['title'][:70]} | {o['url']}{' (+' + str(len(g['others'])) + '건)' if g['others'] else ''}\n")
                     continue
                 fh.write(f"c{n} | 점수 {g['score']} {' '.join(g['tags'])} | {when} | {o['title']} | {label(o)} | {o['url']}\n")
                 for j, m in enumerate(g['others'][:4], 1):
                     keys[f'c{n}-{j}'] = m['key']  # ↳ 줄도 따로 이월할 수 있게 번호를 줌
-                    mw = f"{kst(m['pub']):%m-%d %H:%M}" if m['pub'] else f"처음 확인 {kst(m['first_seen']):%m-%d %H:%M}"
+                    mw = f"{kst(m['pub']):%m-%d %H:%M} KST" if m['pub'] else f"처음 확인 {kst(m['first_seen']):%m-%d %H:%M}"
                     fh.write(f"   ↳ c{n}-{j} | {mw} | {label(m)} | {m['title'][:60]} | {m['url']}\n")
                 if len(g['others']) > 4:
                     fh.write(f"   ↳ 외 {len(g['others']) - 4}건\n")
