@@ -156,8 +156,8 @@ def prep():
         cands.append(o)
     groups = cluster(cands, sent if isinstance(sent, list) else [])
     keys = {}
-    bands = [('점수 3 이상: 모두 검토', lambda g: g['score'] >= 3), ('점수 1~2', lambda g: 1 <= g['score'] <= 2),
-             ('점수 0 이하: 제목만, 필요할 때만 확인', lambda g: g['score'] <= 0)]
+    bands = [('점수 3 이상: 모두 검토', lambda g: g['score'] >= 3), ('점수 2', lambda g: g['score'] == 2),
+             ('점수 1 이하: 제목만, 축에 해당할 만한 것만 확인', lambda g: g['score'] <= 1)]
     n = 0
     with open(f'{W}/candidates.md', 'w', encoding='utf-8') as fh:
         fh.write(f"# 후보 묶음 {len(groups)}개(원 항목 {len(cands)}건). 점수는 정렬용이고 판정은 5절 기준. "
@@ -170,8 +170,8 @@ def prep():
                 o = g['rep']
                 keys[f'c{n}'] = o['key']
                 when = f"{kst(o['pub']):%m-%d %H:%M} KST" if o['pub'] else f"처음 확인 {kst(o['first_seen']):%m-%d %H:%M}"
-                if g['score'] <= 0:
-                    fh.write(f"c{n} | {o['title'][:70]} | {o['url']}\n")
+                if g['score'] <= 1:
+                    fh.write(f"c{n} | {o['title'][:70]} | {o['url']}{' (+' + str(len(g['others'])) + '건)' if g['others'] else ''}\n")
                     continue
                 fh.write(f"c{n} | 점수 {g['score']} {' '.join(g['tags'])} | {when} | {o['title']} | {label(o)} | {o['url']}\n")
                 for m in g['others'][:4]:
@@ -183,7 +183,7 @@ def prep():
     json.dump(keys, open(f'{W}/cand_keys.json', 'w'))
     top = [g for g in groups if g['score'] >= 3]
     print(f"후보 {len(cands)}건 → 묶음 {len(groups)}개 → /tmp/ev/candidates.md (워터마크 {wm} 이후 처음 수집된 항목, 이월 {sum(1 for o in cands if o['key'] in dfr)}건)")
-    print(f"  점수 3 이상 {len(top)}개, 1~2 {sum(1 for g in groups if 1 <= g['score'] <= 2)}개, 0 이하 {sum(1 for g in groups if g['score'] <= 0)}개"
+    print(f"  점수 3 이상 {len(top)}개, 2 {sum(1 for g in groups if g['score'] == 2)}개, 1 이하 {sum(1 for g in groups if g['score'] <= 1)}개"
           f" / 상위 중 발견 전용 대표 {sum(1 for g in top if g['rep'].get('portal'))}개")
     print('  ' + ', '.join(f'{k} {v}' for k, v in sorted(by.items(), key=lambda x: -x[1])))
     bad = [(k, v['error'][:60]) for k, v in status['lists'].items() if not v['ok']]
@@ -200,10 +200,11 @@ def prep():
     json.dump(st, open(f'{W}/state.json', 'w'))
 
 
-R1 = re.compile(r'\bSOH\b|state of health|battery health|배터리 (상태|건강|수명|성능평가)|잔존가치|잔가|residual value|Restwert|残価|保值|\bOBD\b|'
-                r'data access|Data Act|right to repair|수리권|데이터 개방|차량 데이터|vehicle data', re.I)
+R1 = re.compile(r'\bSOH\b|state of health|battery (health|score|check|test|certificate|report)|배터리 (상태|건강|수명|성능|점수|진단|인증)|안전지수|'
+                r'잔존가치|잔가|감가|residual value|retains? (their |its )?value|depreciation|Restwert|Wertverlust|残価|残存価値|減価|保值|\bOBD\b|'
+                r'data access|Data Act|right to repair|수리권|데이터 개방|차량 데이터|vehicle data|电池健康|电池检测|バッテリー(診断|状態|劣化)|Batterie(zustand|zertifikat|test|check)', re.I)
 R2 = re.compile(r'passport|여권|护照|이력\s?관리|溯源|second.?life|재사용|재제조|사용후|换电|battery swap|배터리 교환|recycl|回收|재활용|'
-                r'used (ev|car|electric)|중고|二手|中古|Gebraucht|insurance|보험|车险|保険|Versicherung|diagnos|진단|telematics|텔레매틱스|\bleas(e|ing)\b|리스 만기|리스사|잔가', re.I)
+                r'used (ev|car|electric)|second.?hand|pre.?owned|중고|二手|中古|Gebraucht|换电站|insurance|보험|车险|保険|Versicherung|diagnos|진단|telematics|텔레매틱스|\bleas(e|ing)\b|리스 만기|리스사|잔가', re.I)
 INS = re.compile(r'insurance|보험|车险|保険|Versicherung', re.I)
 BAT = re.compile(r'batter|배터리|电池|バッテリー|電池|Batterie|Akku', re.I)
 EXPL = re.compile(r'방법|점검 순서|하는 법|how to|FAQ|一文说清|\bReview\b|가이드|\bguide\b|\btips\b|알아보|總結|总结', re.I)
@@ -277,10 +278,14 @@ def pnouns(t):
     return {w.lower() for w in re.findall(r'[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]{3,}', t) if w[0].isupper() and w.lower() not in STOP}
 
 
-def same_event(a, b, r):
-    if len(a['_pn'] & {w.lower() for w in re.findall(r'[A-Za-zÄÖÜäöüß\-]{4,}', b['title'])}) >= 2 and \
-       len(b['_pn'] & {w.lower() for w in re.findall(r'[A-Za-zÄÖÜäöüß\-]{4,}', a['title'])}) >= 2:
-        return True
+DE_RX = re.compile(r'[äöüß]| (und|der|die|das|mit|für|auf|ein|eine|wird|soll|bei)\b', re.I)
+
+
+def same_event(a, b, r, df):
+    # 영·독 번역판: 언어가 다르고, 후보 전체에서 드문(3개 제목 이하) 고유어를 2개 이상 공유
+    if bool(DE_RX.search(a['title'])) != bool(DE_RX.search(b['title'])):
+        if len({w for w in a['_pn'] & b['_lw'] if df.get(w, 0) <= 3} | {w for w in b['_pn'] & a['_lw'] if df.get(w, 0) <= 3}) >= 2:
+            return True
     if not (a['_en'] & b['_en']): return False
     strong = {x for x in a['_nu'] if x.startswith('!')} & {x for x in b['_nu'] if x.startswith('!')}
     plain = {x.lstrip('!') for x in a['_nu']} & {x.lstrip('!') for x in b['_nu']}
@@ -331,6 +336,10 @@ def cluster(cands, sent):
     for o in cands:
         o['_ck'], o['_nt'] = ckey(o['url']), ntitle(o['title'])
         o['_en'], o['_nu'], o['_pn'] = entities(o['title']), numbers(o['title']), pnouns(o['title'])
+        o['_lw'] = {w.lower() for w in re.findall(r'[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]{3,}', o['title'])}
+    df = {}
+    for o in cands:
+        for w in o['_lw']: df[w] = df.get(w, 0) + 1
         o['_t'] = kst(o['pub'] or o['first_seen'])
     par = list(range(n))
 
@@ -347,7 +356,7 @@ def cluster(cands, sent):
             if not same and a['_nt'] and b['_nt']:
                 sm = difflib.SequenceMatcher(None, a['_nt'], b['_nt'])
                 r = sm.ratio() if sm.real_quick_ratio() >= 0.6 and sm.quick_ratio() >= 0.6 else 0
-                same = r >= 0.85 or same_event(a, b, r)
+                same = r >= 0.85 or same_event(a, b, r, df)
             if same: par[find(i)] = find(j)
     bucket = {}
     for i in range(n): bucket.setdefault(find(i), []).append(cands[i])
