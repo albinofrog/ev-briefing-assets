@@ -234,6 +234,9 @@ R1 = re.compile(r'\bSOH\b|state' + S + 'of' + S + 'health|battery' + S + '(healt
 R2 = re.compile(r'passport|여권|护照|数字身份证|이력\s?관리|溯源|second' + S + 'life|재사용|재제조|사용후|은퇴(한)? 배터리|退役电池|换电|battery' + S + 'swap|배터리 교환|recycl|回收|재활용|'
                 r'used' + S + '(ev|car|electric|vehicle)|second' + S + 'hand|pre' + S + '?owned|remarketing|중고|二手|中古|Gebraucht|保值|insurance|insurer|보험|손해율|车险|保険|Versicherung|'
                 r'diagnos|진단|telematics|텔레매틱스|connected' + S + 'car|\blease\b|\bleasing\b|리스 만기|리스사|换电站', re.I)
+# 자동차 문맥 없이 쓰이면 다른 업계 뉴스까지 끌어오는 넓은 단어(데이터 접근·보험·수리권·진단 등)
+BROAD = re.compile(r'data' + S + 'access|right' + S + 'to' + S + 'repair|insur|보험|손해율|保険|Versicherung|diagnos|진단|電池診断|recycl|재활용|回收|\blease\b|\bleasing\b|\bOBD\b', re.I)
+AUTO = re.compile(r'\b(car|cars|vehicle|vehicles|auto|automotive|automaker|EV|EVs|motor|fleet|dealer)\b|electric|자동차|차량|전기차|완성차|중고차|车|車|Fahrzeug|Kfz|Auto|E-Auto', re.I)
 INS = re.compile(r'insurance|보험|车险|保険|Versicherung', re.I)
 BAT = re.compile(r'batter|배터리|电池|バッテリー|電池|Batterie|Akku', re.I)
 EXPL = re.compile(r'(확인|구매|점검|고르는|선택|읽는) 방법|점검 순서|하는 법|how' + S + 'to|FAQ|一文说清|가이드(?!라인)|\bguide\b|\btips\b|알아보|總結|总结', re.I)
@@ -351,6 +354,8 @@ def label(o):
 
 def score_item(o):
     t, tags = o['title'], []
+    if not AUTO.search(t) and not BAT.search(t):  # 자동차·배터리 문맥이 없으면 넓은 단어는 관련도로 치지 않음
+        t = BROAD.sub(' ', t)
     ent = sorted((r, nm) for nm, r in src_info()['rel'] if (nm in t if not re.fullmatch(r'[A-Za-z]+', nm) else re.search(r'(?<![A-Za-z])' + nm + r'(?![A-Za-z])', t)))
     if R1.search(t) or (INS.search(t) and BAT.search(t)):
         sc = 3; tags.append('R1:' + (R1.search(t) or INS.search(t)).group(0))
