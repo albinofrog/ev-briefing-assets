@@ -182,9 +182,16 @@ def prep():
     for o in cands: by[o['src']] = by.get(o['src'], 0) + 1
     json.dump(keys, open(f'{W}/cand_keys.json', 'w'))
     top = [g for g in groups if g['score'] >= 3]
+    known_names = set(aliases()) | {re.sub(r'[\s·.,()]', '', nm).lower() for nm, _ in src_info()['rel']}
+    freq = {}
+    for g in groups:
+        for w in set().union(*({x for x in o['_pn']} for o in [g['rep']] + g['others'])):
+            if w not in known_names: freq[w] = freq.get(w, 0) + 1
+    sugg = [w for w, c in sorted(freq.items(), key=lambda x: -x[1]) if c >= 3][:10]
     print(f"후보 {len(cands)}건 → 묶음 {len(groups)}개 → /tmp/ev/candidates.md (워터마크 {wm} 이후 처음 수집된 항목, 이월 {sum(1 for o in cands if o['key'] in dfr)}건)")
     print(f"  점수 3 이상 {len(top)}개, 2 {sum(1 for g in groups if g['score'] == 2)}개, 1 이하 {sum(1 for g in groups if g['score'] <= 1)}개"
           f" / 상위 중 발견 전용 대표 {sum(1 for g in top if g['rep'].get('portal'))}개")
+    if sugg: print('별칭 후보(별칭표에 없고 3개 이상 묶음에 나온 고유어, 같은 주체의 다른 표기가 있으면 sources.md D절에 추가): ' + ', '.join(sugg))
     print('  ' + ', '.join(f'{k} {v}' for k, v in sorted(by.items(), key=lambda x: -x[1])))
     bad = [(k, v['error'][:60]) for k, v in status['lists'].items() if not v['ok']]
     stale = [k for k, v in {**status['lists'], **status.get('watch', {})}.items()
@@ -223,6 +230,11 @@ def src_info():
         b = t[t.index('## B.'):t.index('## C.')]
         c = t[t.index('## C.'):t.index('## D.')]
         d = t[t.index('## D.'):t.index('## E.')] if '## E.' in t else t[t.index('## D.'):]
+        f = t[t.index('## F.'):] if '## F.' in t else ''
+        rel = []  # (표기, 관련도) 대소문자 구분
+        for ln in f.splitlines():
+            m = re.match(r'- (.+?)\s*\|\s*R([12])\s*$', ln)
+            if m: rel += [(nm.strip(), int(m.group(2))) for nm in m.group(1).split('=') if nm.strip()]
         words = [w.strip() for ln in b.splitlines()[1:] if ln.strip() and not ln.startswith('옵션')
                  for w in ln.split(',') if w.strip()]
         lat = [w for w in words if re.fullmatch(r'[A-Za-z0-9 \-]+', w)]
@@ -237,7 +249,7 @@ def src_info():
                         ents.append((re.compile(r'(?<![A-Za-z])' + re.escape(nm) + r'(?![A-Za-z])', re.I if len(nm) > 3 else 0), names[0]))
                     else:
                         ents.append((nm.lower(), names[0]))
-        _SRC = {'ev': ev, 'tier1': tier1, 'ents': ents}
+        _SRC = {'ev': ev, 'tier1': tier1, 'ents': ents, 'rel': rel}
     return _SRC
 
 
@@ -316,10 +328,15 @@ def label(o):
 
 def score_item(o):
     t, tags = o['title'], []
+    ent = sorted((r, nm) for nm, r in src_info()['rel'] if (nm in t if not re.fullmatch(r'[A-Za-z]+', nm) else re.search(r'(?<![A-Za-z])' + nm + r'(?![A-Za-z])', t)))
     if R1.search(t) or (INS.search(t) and BAT.search(t)):
         sc = 3; tags.append('R1:' + (R1.search(t) or INS.search(t)).group(0))
+    elif ent and ent[0][0] == 1:
+        sc = 3; tags.append('R1:' + ent[0][1])
     elif R2.search(t):
         sc = 2; tags.append('R2:' + R2.search(t).group(0))
+    elif ent:
+        sc = 2; tags.append('R2:' + ent[0][1])
     elif ev_ok(t):
         sc = 1
     else:

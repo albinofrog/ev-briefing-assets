@@ -24,6 +24,12 @@ BING = 'https://www.bing.com/news/search?q={q}&format=RSS&qft=interval%3d%228%22
 GOOG = 'https://news.google.com/rss/search?q={q}&hl={hl}&gl={gl}&ceid={ceid}'
 GN_WHEN = os.environ.get('GN_WHEN', '2d')
 FRESH_H = 72  # 게재 시각이 이보다 오래된 결과는 수집하지 않음
+CAP = 15  # 검색어 하나가 한 번 수집에 넣는 새 항목 상한(최신순)
+DECODE_BUDGET = 180  # 한 번 수집에서 원주소 변환에 쓰는 최대 초. 넘으면 남은 것은 다음 수집으로
+# 구매 가이드·해설형 제목(뉴스 아님). 검색 결과에만 적용
+GUIDE = re.compile(r'值不值得买|值得买吗|值不值|FAQ|怎么选|榜单|排行榜|攻略|避坑|指南|吗？|'
+                   r'방법|점검 순서|하는 법|총정리|체크리스트|'
+                   r'\bhow to\b|buyer.?s guide|\btips\b|\bexplained\b|選び方|おすすめ|ランキング', re.I)
 EDITIONS = {'KR:ko': ('ko', 'KR'), 'JP:ja': ('ja', 'JP'), 'CN:zh-Hans': ('zh-CN', 'CN'), 'DE:de': ('de', 'DE'),
             'US:en': ('en-US', 'US'), 'GB:en': ('en-GB', 'GB')}
 NOW = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
@@ -87,6 +93,7 @@ def parse_watch(path):
 def dom_in(u, doms):
     m = re.match(r'https?://([^/]+)', u or '')
     h = m.group(1).lower() if m else ''
+    h = re.sub(r'^(www\.|m\.)', '', h).replace('.m.', '.')  # 모바일 주소도 같은 도메인으로 봄
     return any(h == d or h.endswith('.' + d) for d in doms)
 
 
@@ -168,9 +175,20 @@ def main(out):
     ok = matcher(words)
     brand = {w['q'] for w in watch if w['brand']}
 
-    def keep_watch(q, title):  # EV 문맥 필수, 업체명 검색어(!)만 고유 단어로도 통과
-        term = max(re.sub(r'"', '', q).split(), key=len).lower()
+    def keep_watch(q, title):  # EV 문맥 필수(업체명 검색어(!)는 고유 단어로도 통과), 가이드·해설형 제외
+        if GUIDE.search(title): return False
+        term = max(re.sub(r'"|\bOR\b', '', q).split(), key=len).lower()
         return ok(title) or (q in brand and term in title.lower())
+
+    def bing_watch(q):
+        b = rss_items(BING.format(q=urllib.parse.quote(q)))
+        res = []
+        for it in b:
+            if keep_watch(q, it['title']) and (not it['pub'] or it['pub'] >= fresh):
+                it['url'] = bing_url(it['url'])
+                res.append({**it, 'eng': 'bing'})
+        return len(b), res
+    deadline = time.time() + DECODE_BUDGET
     path = os.path.join(out, 'items.jsonl')
     old = []
     if os.path.exists(path):
@@ -233,12 +251,20 @@ def main(out):
             try:
                 g = google_items(q, w['ed'])
                 st['fetched'] = len(g)
+                if len(g) >= 100: st['cap_hit'] = True  # 구글 상한. 검색어를 나눌 것
                 cand = [it for it in g if keep_watch(q, it['title']) and (not it['pub'] or it['pub'] >= fresh)]
+                cand.sort(key=lambda it: it['pub'] or '', reverse=True)
                 st['matched'] = len(cand)
                 todo = [it for it in cand if gkey(it['url']) not in known_g]
-                okn = 0
+                if len(todo) > CAP: st['capped'] = len(todo) - CAP
+                todo = todo[:CAP]
+                okn = tried = 0
                 for i in range(0, len(todo), 10):  # 새 항목만 원주소로 변환
+                    if time.time() > deadline:
+                        st['decode_later'] = len(todo) - i
+                        break
                     chunk = todo[i:i + 10]
+                    tried += len(chunk)
                     try:
                         res = gnewsdecoder([it['url'] for it in chunk], interval=1)
                     except Exception as e:  # noqa: BLE001
@@ -248,28 +274,26 @@ def main(out):
                             okn += 1
                             items.append({**it, 'g': gkey(it['url']), 'url': d['decoded_url'], 'eng': 'google'})
                     time.sleep(1)
-                st['decoded'], st['decode_fail'] = okn, len(todo) - okn
+                st['decoded'], st['decode_fail'] = okn, tried - okn
                 if not g:
                     why = '구글 0건'
-                elif len(todo) >= 2 and okn < len(todo) / 2:
-                    why = f'변환 실패 {len(todo) - okn}/{len(todo)}'
+                elif tried >= 2 and okn < tried / 2:
+                    why = f'변환 실패 {tried - okn}/{tried}'
                 st['ok'] = True
             except Exception as e:  # noqa: BLE001
                 why = f'구글 오류 {type(e).__name__}: {str(e)[:120]}'
-        if why:  # 예비: Bing
-            st['fallback'] = why
-            st['eng'] = 'bing'
+        if why or w['brand']:  # 예비: Bing. 업체명 검색어는 구글이 적게 잡아 항상 함께 조회
+            if why: st['fallback'], st['eng'] = why, 'bing'
             try:
-                b = rss_items(BING.format(q=urllib.parse.quote(q)))
-                st['ok'], st['fetched'] = True, len(b)
-                items = []
-                for it in b:
-                    if keep_watch(q, it['title']):
-                        it['url'] = bing_url(it['url'])
-                        items.append({**it, 'eng': 'bing'})
-                st['matched'] = len(items)
+                nb, bi = bing_watch(q)
+                st['ok'] = True
+                st['bing_fetched'] = nb
+                if why: items, st['fetched'], st['matched'] = [], nb, len(bi)
+                else: st['eng'] = 'google+bing'
+                have = {nurl(it['url']) for it in items}
+                items += [it for it in bi if nurl(it['url']) not in have][:CAP]
             except Exception as e:  # noqa: BLE001
-                st['error'] = f'{why} / Bing {type(e).__name__}: {str(e)[:120]}'
+                if why: st['error'] = f'{why} / Bing {type(e).__name__}: {str(e)[:120]}'
         for it in items:
             fs = it['pub'] if backfill and it['pub'] and it['pub'] <= iso(NOW) else iso(NOW)
             st['new'] += add('watch:' + q, '', 'watch', it, fs, backfill and not it['pub'])
