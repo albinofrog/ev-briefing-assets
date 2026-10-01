@@ -237,14 +237,14 @@ R1 = re.compile(r'\bSOH\b|state' + S + 'of' + S + 'health|battery' + S + '(healt
                 r'잔존가치|잔가|감가|residual' + S + 'values?|retains?' + S + '(their |its )?value|depreciation|(used' + S + '|second' + S + 'hand )?(EV|electric' + S + 'vehicle)s?' + S + 'values?|'
                 r'Restwert|Wertverlust|残価|残存価値|減価|\bOBD\b|data' + S + 'access|Data' + S + 'Act|right' + S + 'to' + S + 'repair|in' + S + 'vehicle' + S + 'data|'
                 r'수리권|데이터 개방|차량 데이터|자동차 데이터|vehicle' + S + 'data|Fahrzeugdaten|Datenzugang|汽车数据|车辆数据|車両データ|'
-                r'电池健康|电池检测|バッテリー(診断|状態|劣化)|電池診断|Batterie(zustand|zertifikat|gesundheit|test|check)|'
+                r'电池健康|电池检测|(バッテリー|蓄?電池)の?(診断|状態|劣化)|電池診断|Batterie(zustand|zertifikat|gesundheit|test|check)|'
                 r'degradation|(lose|lost|loses|retain)s?' + S + '(about |only )?[\d.]+%' + S + '(of|per)|capacity' + S + '(loss|fade)|batter(y|ies)' + S + '(degrade|degradation|durability)|durability|'
                 r'배터리 열화|电池衰减|容量衰减|劣化率', re.I)
-R2 = re.compile(r'passport|여권|护照|数字身份证|이력\s?관리|溯源|second' + S + 'life|재사용|재제조|사용후|은퇴(한)? 배터리|退役电池|换电|battery' + S + 'swap|배터리 교환|recycl|回收|재활용|'
-                r'used' + S + '(ev|car|electric|vehicle)|second' + S + 'hand|pre' + S + '?owned|remarketing|중고|二手|中古|Gebraucht|保值|insurance|insurer|보험|손해율|车险|保険|Versicherung|'
+R2 = re.compile(r'passport|여권|护照|数字身份证|이력\s?관리|溯源|second' + S + 'life|재사용|재제조|사용후|사용 후 배터리|은퇴(한)? 배터리|退役电池|换电|battery' + S + 'swap|배터리 교환|recycl|回收|재활용|リサイクル|'
+                r'used' + S + '(ev|car|electric|vehicle)|second[\s\-]?hand|pre' + S + '?owned|remarketing|중고|二手|中古|Gebraucht|保值|insurance|insurer|보험|손해율|车险|保険|Versicherung|'
                 r'diagnos|진단|telematics|텔레매틱스|connected' + S + 'car|\blease\b|\bleasing\b|리스 만기|리스사|换电站', re.I)
 # 자동차 문맥 없이 쓰이면 다른 업계 뉴스까지 끌어오는 넓은 단어(데이터 접근·보험·수리권·진단 등)
-BROAD = re.compile(r'data' + S + 'access|right' + S + 'to' + S + 'repair|insur|보험|손해율|保険|Versicherung|diagnos|진단|電池診断|recycl|재활용|回收|\blease\b|\bleasing\b|\bOBD\b', re.I)
+BROAD = re.compile(r'data' + S + 'access|right' + S + 'to' + S + 'repair|insur|보험|손해율|保険|Versicherung|diagnos|진단|電池診断|recycl|재활용|回收|リサイクル|\blease\b|\bleasing\b|\bOBD\b', re.I)
 AUTO = re.compile(r'\b(car|cars|vehicle|vehicles|auto|automotive|automaker|EV|EVs|motor|fleet|dealer)\b|electric|자동차|차량|전기차|완성차|중고차|车|車|Fahrzeug|Kfz|Auto|E-Auto', re.I)
 INS = re.compile(r'insurance|보험|특약|车险|保険|Versicherung', re.I)
 BAT = re.compile(r'batter|배터리|电池|バッテリー|電池|Batterie|Akku', re.I)
