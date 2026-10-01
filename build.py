@@ -399,7 +399,7 @@ def cluster(cands, sent):
         bonus = (['1등급'] if any(dom_in(host(o['url']), tier1) for o in mem) else []) + ([f'{len(outlets)}개 매체'] if len(outlets) >= 3 else [])
         if bonus: sc += 1; tags = tags + ['·'.join(bonus) + '+1']  # 가산은 합쳐서 최대 1
         if all(o.get('portal') for o in mem): sc -= 1; tags = tags + ['발견 전용-1']
-        hit = sorted({norm(e) for o in mem for e in o['_en']} & led)
+        hit = sorted({e for o in mem for e in o['_en'] if norm(e) in led})
         if hit: tags = tags + ['[장부 유사: ' + ', '.join(hit)[:40] + ']']
         if any(o['title'].startswith('[이월]') for o in mem): tags = tags + ['[이월]']
         if rep['pub'] and kst(rep['first_seen']) - kst(rep['pub']) > dt.timedelta(hours=48): tags = tags + ['재게시?']
