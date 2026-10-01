@@ -57,7 +57,7 @@ Elektroauto, Elektroautos, E-Auto, E-Autos, Batterie, Akku, Lithium, Gebrauchtwa
 - 일본: nikkei.com, nikkan.co.jp, netdenjd.com, response.jp, kyodonews.jp
 
 ## D. 주체 별칭
-사건 중복 판정에서 같은 주체로 봅니다. 한 줄에 같은 주체의 여러 표기를 `=`로 잇습니다. 새로 겹치는 주체가 나오면 줄을 추가합니다.
+사건 중복 판정에서 같은 주체로 봅니다. 한 줄에 같은 주체의 여러 표기를 `=`로 잇습니다. 새로 겹치는 주체가 나오면 줄을 추가합니다. 주체의 자체 사이트 도메인(예: transportenvironment.org)을 넣으면 그 사이트 기사도 장부 유사로 표시됩니다.
 
 - NIO Inc. = NIO = NIO Power = 蔚来 = 니오
 - Geely Holding Group = Geely = 吉利 = 지리
@@ -66,7 +66,7 @@ Elektroauto, Elektroautos, E-Auto, E-Autos, Batterie, Akku, Lithium, Gebrauchtwa
 - Toyota Motor Corporation = Toyota = 토요타 = トヨタ
 - Honda Motor Co., Ltd. = Honda = 혼다 = ホンダ
 - Nissan Motor Co., Ltd. = Nissan = 닛산 = 日産
-- 현대자동차그룹 = 현대자동차 = 현대차 = 현대차그룹 = Hyundai Motor Group = Hyundai Motor Company = Hyundai
+- 현대자동차그룹 = 현대자동차 = 현대차 = 현대차그룹 = Hyundai Motor Group = Hyundai Motor Company = Hyundai = 現代自動車 = 現代自
 - 기아 = Kia
 - LG에너지솔루션 = LG엔솔 = LG Energy Solution
 - 삼성SDI = Samsung SDI
@@ -87,7 +87,7 @@ Elektroauto, Elektroautos, E-Auto, E-Autos, Batterie, Akku, Lithium, Gebrauchtwa
 - National Highway Traffic Safety Administration = NHTSA = 미국 도로교통안전국
 - 산업통상자원부 = 산업부 = MOTIE
 - 국토교통부 = 국토부
-- Transport & Environment = T&E = 유럽교통환경연합
+- Transport & Environment = T&E = 유럽교통환경연합 = transportenvironment.org
 - 宁德时代巧克力换电 = 巧克力换电 = Chocolate Swap = 초콜릿 배터리교환
 
 ## E. 수집 제외·발견 전용 도메인

@@ -11,7 +11,7 @@
 
 작업 폴더 /tmp/ev, 산출물 /mnt/user-data/outputs.
 """
-import sys, os, re, json, html, glob, base64, hashlib, subprocess, datetime as dt
+import sys, os, re, json, html, glob, base64, hashlib, subprocess, unicodedata, datetime as dt
 
 W = '/tmp/ev'
 FONTS = '/tmp/ev_fonts'
@@ -142,11 +142,14 @@ def prep():
     sent = read_sent()
     seen = {h for r in sent for h in [r['url'] if r['url'].startswith('u:') else uhash(r['url'])] + r['alt']} if isinstance(sent, list) else set()
     lo = (kst(st['cutoff']) - dt.timedelta(hours=12)).astimezone(dt.timezone.utc).isoformat()[:19]
-    cands, newest = [], wm
+    cands, newest, hist = [], wm, []
+    cut = st['cutoff'][:19]
+    hlo = (kst(st['cutoff']) - dt.timedelta(days=7)).astimezone(dt.timezone.utc).isoformat()[:19]
     for ln in open(f'{W}/items.jsonl', encoding='utf-8'):
         if not ln.strip(): continue
         o = json.loads(ln)
         if o.get('stub'): continue  # 수집기가 중복 방지용으로 남긴 키
+        if hlo <= (o['pub'] or o['first_seen'])[:19] < cut: hist.append(dict(o))  # 수록 기준 이전 7일: 같은 사건의 이전 보도 대조용
         newest = max(newest, o['first_seen'])
         carried = o['key'] in dfr
         if not carried and (o.get('bf') or o['first_seen'][:19] <= wm[:19].replace('Z', '')): continue  # bf: 첫 수집 때 발행 시각 없이 잡힌 기존 항목
@@ -156,11 +159,12 @@ def prep():
         if uhash(o['url']) in seen: continue
         o['title'] = ('[이월] ' if carried else '') + clean_title(o['title'])
         cands.append(o)
-    groups = cluster(cands, sent if isinstance(sent, list) else [])
+    ck = {o['key'] for o in cands}
+    groups = cluster(cands, sent if isinstance(sent, list) else [], [h for h in hist if h['key'] not in ck])
     meta = {}  # check가 묶음의 목록 시각을 대조하는 데 씀
     for g in groups:
         mem = [g['rep']] + g['others']
-        pubs = [o['pub'] for o in mem if o['pub']]
+        pubs = [o['pub'] for o in mem if o['pub']] + ([g['prior']['pub'] or g['prior']['first_seen']] if g['prior'] else [])
         for o in mem:
             meta[uhash(o['url'])] = {'own': o['pub'], 'min': min(pubs) if pubs else None, 'grp': [uhash(x['url']) for x in mem]}
     json.dump(meta, open(f'{W}/cand_meta.json', 'w'))
@@ -288,10 +292,12 @@ def src_info():
 
 def ev_ok(t):
     rx, other = src_info()['ev']
+    t = unicodedata.normalize('NFKC', t)  # 전각 ＥＶ 등을 반각으로
     return bool(rx.search(t)) or any(w in t.lower() for w in other)
 
 
 def entities(t):
+    t = unicodedata.normalize('NFKC', t)
     out = set()
     for pat, canon in src_info()['ents']:
         if (pat in t.lower()) if isinstance(pat, str) else pat.search(t):
@@ -330,15 +336,17 @@ def pnouns(t):
 DE_RX = re.compile(r'[äöüß]| (und|der|die|das|mit|für|auf|ein|eine|wird|soll|bei)\b', re.I)
 
 
-def same_event(a, b, r, df):
+def same_event(a, b, r, df, loose=True):
     # 영·독 번역판: 언어가 다르고, 후보 전체에서 드문(3개 제목 이하) 고유어를 2개 이상 공유
-    if bool(DE_RX.search(a['title'])) != bool(DE_RX.search(b['title'])):
+    if loose and bool(DE_RX.search(a['title'])) != bool(DE_RX.search(b['title'])):
         if len({w for w in a['_pn'] & b['_lw'] if df.get(w, 0) <= 3} | {w for w in b['_pn'] & a['_lw'] if df.get(w, 0) <= 3}) >= 2:
             return True
     strong = {x for x in a['_nu'] if x.startswith('!')} & {x for x in b['_nu'] if x.startswith('!')}
-    if strong and host(a['url']).split('.')[-2:] == host(b['url']).split('.')[-2:]: return True  # 같은 매체의 언어판
+    if loose and strong and host(a['url']).split('.')[-2:] == host(b['url']).split('.')[-2:]: return True  # 같은 매체의 언어판
     if not (a['_en'] & b['_en']): return False
     plain = {x.lstrip('!') for x in a['_nu']} & {x.lstrip('!') for x in b['_nu']}
+    if not loose and len(plain) < 2 and r < 0.65:  # 이력 대조: 수치 하나만 겹치면(단위 무시) 주체가 둘 이상 겹쳐야 같은 사건
+        return bool(strong) and len(a['_en'] & b['_en']) >= 2
     return bool(strong) or len(plain) >= 2 or r >= 0.65
 
 
@@ -365,7 +373,7 @@ def label(o):
 
 
 def score_item(o):
-    t, tags = o['title'], []
+    t, tags = unicodedata.normalize('NFKC', o['title']), []
     if not AUTO.search(t) and not BAT.search(t):  # 자동차·배터리 문맥이 없으면 넓은 단어는 관련도로 치지 않음
         t = BROAD.sub(' ', t)
     ent = sorted((r, nm) for nm, r in src_info()['rel'] if (nm in t if not re.fullmatch(r"[A-Za-z0-9 .&'-]+", nm) else re.search(r'(?<![A-Za-z])' + re.escape(nm) + r'(?![A-Za-z])', t)))
@@ -386,18 +394,31 @@ def score_item(o):
     return sc, tags
 
 
-def cluster(cands, sent):
-    """같은 URL·같은 기사(제목 0.85)·같은 사건(주체 일치 + 수치 일치 또는 제목 0.5)을 72시간 안에서 묶고 점수를 매김."""
+def feats(o):
+    o['_ck'], o['_nt'] = ckey(o['url']), ntitle(o['title'])
+    o['_en'], o['_nu'], o['_pn'] = entities(o['title']), numbers(o['title']), pnouns(o['title'])
+    o['_lw'] = {w.lower() for w in re.findall(r'[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]{3,}', o['title'])}
+    o['_t'] = kst(o['pub'] or o['first_seen'])
+
+
+def same_item(a, b, df, loose=True):
     import difflib
+    if a['_ck'] == b['_ck']: return True
+    if not (a['_nt'] and b['_nt']): return False
+    sm = difflib.SequenceMatcher(None, a['_nt'], b['_nt'])
+    r = sm.ratio() if sm.real_quick_ratio() >= 0.6 and sm.quick_ratio() >= 0.6 else 0
+    return r >= 0.85 or same_event(a, b, r, df, loose)
+
+
+def cluster(cands, sent, hist=()):
+    """같은 URL·같은 기사(제목 0.85)·같은 사건(주체 일치 + 수치 일치 또는 제목 0.5)을 72시간 안에서 묶고 점수를 매김.
+    hist(수록 기준 이전 7일의 수집 이력)에 같은 사건이 있으면 가장 이른 것을 g['prior']로 남김."""
     n = len(cands)
-    for o in cands:
-        o['_ck'], o['_nt'] = ckey(o['url']), ntitle(o['title'])
-        o['_en'], o['_nu'], o['_pn'] = entities(o['title']), numbers(o['title']), pnouns(o['title'])
-        o['_lw'] = {w.lower() for w in re.findall(r'[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]{3,}', o['title'])}
+    for o in cands: feats(o)
     df = {}
     for o in cands:
         for w in o['_lw']: df[w] = df.get(w, 0) + 1
-        o['_t'] = kst(o['pub'] or o['first_seen'])
+    for h in hist: feats(h)
     par = list(range(n))
 
     def find(i):
@@ -409,12 +430,7 @@ def cluster(cands, sent):
         for j in range(i + 1, n):
             b = cands[j]
             if abs((a['_t'] - b['_t']).total_seconds()) > 72 * 3600: continue
-            same = a['_ck'] == b['_ck']
-            if not same and a['_nt'] and b['_nt']:
-                sm = difflib.SequenceMatcher(None, a['_nt'], b['_nt'])
-                r = sm.ratio() if sm.real_quick_ratio() >= 0.6 and sm.quick_ratio() >= 0.6 else 0
-                same = r >= 0.85 or same_event(a, b, r, df)
-            if same: par[find(i)] = find(j)
+            if same_item(a, b, df): par[find(i)] = find(j)
     bucket = {}
     for i in range(n): bucket.setdefault(find(i), []).append(cands[i])
     tier1 = src_info()['tier1']
@@ -429,13 +445,17 @@ def cluster(cands, sent):
         outlets = {o.get('outlet') or host(o['url']) for o in mem}
         bonus = (['1등급'] if any(dom_in(host(o['url']), tier1) for o in mem) else []) + ([f'{len(outlets)}개 매체'] if len(outlets) >= 3 else [])
         if bonus and sc >= 2: sc += 1; tags = tags + ['·'.join(bonus) + '+1']  # 가산은 관련 단어가 있는 묶음(기본 2점 이상)에만, 합쳐서 최대 1
-        if all(o.get('portal') for o in mem): sc -= 1; tags = tags + ['발견 전용-1']
-        hit = sorted({e for o in mem for e in o['_en'] if norm(e) in led})
+        portal = all(o.get('portal') for o in mem)
+        if portal and sc >= 2: tags = tags + ['발견 전용']  # 관련 단어가 있는 묶음은 감점하지 않고 같은 점수 안에서 뒤로만 보냄
+        elif portal: sc -= 1; tags = tags + ['발견 전용-1']
+        hit = sorted({e for o in mem for e in o['_en'] | entities(host(o['url'])) if norm(e) in led})  # 주체 자체 사이트(D절 도메인 별칭)도 대조
         if hit: tags = tags + ['[장부 유사: ' + ', '.join(hit)[:40] + ']']
+        prior = min((h for h in hist if any(same_item(o, h, df, loose=False) for o in mem)), key=lambda h: h['_t'], default=None)  # 이력 대조는 주체 일치 필수(같은 매체·번역판 완화 규칙 제외)
+        if prior: tags = tags + [f"[이전 보도: {prior['_t']:%m-%d %H:%M} {prior.get('outlet') or host(prior['url'])}]"]
         if any(o['title'].startswith('[이월]') for o in mem): tags = tags + ['[이월]']
         if rep['pub'] and kst(rep['first_seen']) - kst(rep['pub']) > dt.timedelta(hours=48): tags = tags + ['재게시?']
-        groups.append({'rep': rep, 'others': mem[1:], 'score': sc, 'tags': tags})
-    groups.sort(key=lambda g: (-g['score'], -len(g['others']), g['rep']['_t']), reverse=False)
+        groups.append({'rep': rep, 'others': mem[1:], 'score': sc, 'tags': tags, 'portal': portal, 'prior': prior})
+    groups.sort(key=lambda g: (-g['score'], g['portal'], -len(g['others']), g['rep']['_t']), reverse=False)
     return groups
 
 

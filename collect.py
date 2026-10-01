@@ -8,7 +8,7 @@ sources.md A·B·E절과 watchlist.md를 읽어 목록·검색어를 조회하�
 OUT_DIR/items.jsonl에 처음 본 항목만 first_seen과 함께 추가합니다(10일 보관).
 OUT_DIR/status.json에는 목록·검색어별 조회 결과를 남깁니다.
 """
-import sys, os, re, json, html, time, hashlib, datetime as dt, urllib.parse
+import sys, os, re, json, html, time, hashlib, unicodedata, datetime as dt, urllib.parse
 from zoneinfo import ZoneInfo
 import requests, feedparser
 try:
@@ -120,7 +120,10 @@ def matcher(words):
     latin = [w for w in words if re.fullmatch(r'[A-Za-z0-9 \-]+', w)]
     other = [w for w in words if w not in latin]
     rx = re.compile(r'(?<![A-Za-z])(' + '|'.join(re.escape(w).replace(r'\ ', r'[\s\-]') for w in latin) + r')(?![A-Za-z])', re.I)
-    return lambda t: bool(rx.search(t)) or any(w.lower() in t.lower() for w in other)
+    def hit(t):
+        t = unicodedata.normalize('NFKC', t)  # 전각 ＥＶ·ＢＭＳ 등을 반각으로
+        return bool(rx.search(t)) or any(w.lower() in t.lower() for w in other)
+    return hit
 
 
 def get(url):
