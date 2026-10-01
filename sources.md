@@ -1,6 +1,6 @@
 # EV 시장·정책 브리핑 수집 목록
 
-GitHub Actions의 collect.py가 매시간 이 파일(A·B절)과 watchlist.md를 읽어 data 브랜치의 items.jsonl에 새 항목을 쌓습니다. 판정 규칙은 예약 작업 프롬프트에, 표적 검색어는 watchlist.md에 있습니다.
+GitHub Actions의 collect.py가 매시간 이 파일(A·B·E절)과 watchlist.md를 읽어 data 브랜치의 items.jsonl에 새 항목을 쌓습니다. 주제 검색은 구글 뉴스가 주 경로이고 Bing은 예비입니다. 판정 규칙은 예약 작업 프롬프트에, 표적 검색어는 watchlist.md에 있습니다.
 
 ## A. 목록
 형식: `- 이름 | 권역 | 방식 | URL | 옵션`
@@ -87,3 +87,9 @@ Elektroauto, Elektroautos, E-Auto, E-Autos, Batterie, Akku, Lithium, Gebrauchtwa
 - National Highway Traffic Safety Administration = NHTSA = 미국 도로교통안전국
 - 산업통상자원부 = 산업부 = MOTIE
 - 국토교통부 = 국토부
+
+## E. 수집 제외·발견 전용 도메인
+`제외`는 수집 단계에서 버립니다(자체 매체·집계·SNS). `발견 전용`은 남기되 후보 점수를 낮추고, 리포트에는 원 매체 URL을 찾아 씁니다.
+
+제외: chejiahao.autohome.com.cn, timeline.sohu.com, baijiahao.baidu.com, toutiao.com, tradingview.com, zhihu.com, weibo.com, tistory.com, blog.naver.com, post.naver.com, brunch.co.kr, medium.com, substack.com, note.com, x.com, twitter.com, facebook.com, linkedin.com, youtube.com, reddit.com, wikipedia.org, marketbeat.com
+발견 전용: sina.com.cn, sina.cn, sohu.com, 163.com, qq.com, msn.com, naver.com, daum.net, yahoo.com, yahoo.co.jp, news.google.com, bing.com, eletric-vehicles.com

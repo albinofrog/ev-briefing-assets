@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """EV 시장·정책 브리핑 기계 작업.
 
-  python3 build.py prep            자산·수집 데이터 받기, 시각 고정, 후보 목록(/tmp/ev/candidates.md) 생성
+  python3 build.py prep            자산·수집 데이터 받기, 시각 고정, 후보 목록(/tmp/ev/candidates.md, 같은 기사·사건 묶음, 점수순) 생성
   python3 build.py schema          briefing.json 형식과 예시 출력
   python3 build.py check  FILE     규칙 검사(오류가 있으면 종료 코드 1)
   python3 build.py render FILE     검사 후 HTML·PDF 제작, 장부 줄·푸시·run_log 블록 출력
@@ -149,23 +149,42 @@ def prep():
         carried = o['key'] in dfr
         if not carried and (o.get('bf') or o['first_seen'][:19] <= wm[:19].replace('Z', '')): continue  # bf: 첫 수집 때 발행 시각 없이 잡힌 기존 항목
         if o['pub'] and o['pub'][:19] < lo: continue
+        ud = url_date(o['url'])
+        if not carried and ud and ud < kst(st['cutoff']).date() - dt.timedelta(days=1): continue  # URL 날짜가 기준보다 이름
         if uhash(o['url']) in seen: continue
         o['title'] = ('[이월] ' if carried else '') + clean_title(o['title'])
         cands.append(o)
-    cands.sort(key=lambda o: (o['kind'], o['src'], o['pub'] or o['first_seen']))
+    groups = cluster(cands, sent if isinstance(sent, list) else [])
     keys = {}
+    bands = [('점수 3 이상: 모두 검토', lambda g: g['score'] >= 3), ('점수 1~2', lambda g: 1 <= g['score'] <= 2),
+             ('점수 0 이하: 제목만, 필요할 때만 확인', lambda g: g['score'] <= 0)]
+    n = 0
     with open(f'{W}/candidates.md', 'w', encoding='utf-8') as fh:
-        cur = None
-        for n, o in enumerate(cands, 1):
-            keys[f'c{n}'] = o['key']
-            if o['src'] != cur:
-                cur = o['src']; fh.write(f"\n## {cur}{' (' + o['region'] + ')' if o['region'] else ''}\n")
-            when = f"{kst(o['pub']):%m-%d %H:%M} KST" if o['pub'] else f"처음 확인 {kst(o['first_seen']):%m-%d %H:%M}"
-            fh.write(f"c{n} | {when} | {o['title']} | {o['url']}\n")
+        fh.write(f"# 후보 묶음 {len(groups)}개(원 항목 {len(cands)}건). 점수는 정렬용이고 판정은 5절 기준. "
+                 "↳ 줄은 같은 기사·사건으로 묶인 다른 보도(잘못 묶였으면 따로 판단)\n")
+        for title, pick in bands:
+            sel = [g for g in groups if pick(g)]
+            fh.write(f"\n## {title} ({len(sel)})\n")
+            for g in sel:
+                n += 1
+                o = g['rep']
+                keys[f'c{n}'] = o['key']
+                when = f"{kst(o['pub']):%m-%d %H:%M} KST" if o['pub'] else f"처음 확인 {kst(o['first_seen']):%m-%d %H:%M}"
+                if g['score'] <= 0:
+                    fh.write(f"c{n} | {o['title'][:70]} | {o['url']}\n")
+                    continue
+                fh.write(f"c{n} | 점수 {g['score']} {' '.join(g['tags'])} | {when} | {o['title']} | {label(o)} | {o['url']}\n")
+                for m in g['others'][:4]:
+                    fh.write(f"   ↳ {label(m)} | {m['title'][:60]} | {m['url']}\n")
+                if len(g['others']) > 4:
+                    fh.write(f"   ↳ 외 {len(g['others']) - 4}건\n")
     by = {}
     for o in cands: by[o['src']] = by.get(o['src'], 0) + 1
     json.dump(keys, open(f'{W}/cand_keys.json', 'w'))
-    print(f"후보 {len(cands)}건 → /tmp/ev/candidates.md (워터마크 {wm} 이후 처음 수집된 항목, 이월 {sum(1 for o in cands if o['key'] in dfr)}건)")
+    top = [g for g in groups if g['score'] >= 3]
+    print(f"후보 {len(cands)}건 → 묶음 {len(groups)}개 → /tmp/ev/candidates.md (워터마크 {wm} 이후 처음 수집된 항목, 이월 {sum(1 for o in cands if o['key'] in dfr)}건)")
+    print(f"  점수 3 이상 {len(top)}개, 1~2 {sum(1 for g in groups if 1 <= g['score'] <= 2)}개, 0 이하 {sum(1 for g in groups if g['score'] <= 0)}개"
+          f" / 상위 중 발견 전용 대표 {sum(1 for g in top if g['rep'].get('portal'))}개")
     print('  ' + ', '.join(f'{k} {v}' for k, v in sorted(by.items(), key=lambda x: -x[1])))
     bad = [(k, v['error'][:60]) for k, v in status['lists'].items() if not v['ok']]
     stale = [k for k, v in {**status['lists'], **status.get('watch', {})}.items()
@@ -179,6 +198,179 @@ def prep():
         for k, e in bad: print(f'  {k} | {urls.get(k, "?")} | {e}')
     st.update({'issue': issue, 'watermark_next': newest})
     json.dump(st, open(f'{W}/state.json', 'w'))
+
+
+R1 = re.compile(r'\bSOH\b|state of health|battery health|배터리 (상태|건강|수명|성능평가)|잔존가치|잔가|residual value|Restwert|残価|保值|\bOBD\b|'
+                r'data access|Data Act|right to repair|수리권|데이터 개방|차량 데이터|vehicle data', re.I)
+R2 = re.compile(r'passport|여권|护照|이력\s?관리|溯源|second.?life|재사용|재제조|사용후|换电|battery swap|배터리 교환|recycl|回收|재활용|'
+                r'used (ev|car|electric)|중고|二手|中古|Gebraucht|insurance|보험|车险|保険|Versicherung|diagnos|진단|telematics|텔레매틱스|\bleas(e|ing)\b|리스 만기|리스사|잔가', re.I)
+INS = re.compile(r'insurance|보험|车险|保険|Versicherung', re.I)
+BAT = re.compile(r'batter|배터리|电池|バッテリー|電池|Batterie|Akku', re.I)
+EXPL = re.compile(r'방법|점검 순서|하는 법|how to|FAQ|一文说清|\bReview\b|가이드|\bguide\b|\btips\b|알아보|總結|总结', re.I)
+LAUNCH = re.compile(r'시승|test drive|first drive|首发|上市|新车|발표회|출시 기념', re.I)
+RGN_ORDER = ['한국', 'EU', '미국', '중국', '일본', '']
+TLD_RGN = [('.kr', '한국'), ('.jp', '일본'), ('.cn', '중국'), ('.de', 'EU'), ('.fr', 'EU'), ('.uk', 'EU'), ('.eu', 'EU'),
+           ('.it', 'EU'), ('.es', 'EU'), ('.nl', 'EU')]
+_SRC = None
+
+
+def src_info():
+    """sources.md에서 B절 단어(일반 EV 문맥), C절 1등급 도메인, D절 별칭 원형."""
+    global _SRC
+    if _SRC is None:
+        t = open(f'{W}/sources.md', encoding='utf-8').read()
+        b = t[t.index('## B.'):t.index('## C.')]
+        c = t[t.index('## C.'):t.index('## D.')]
+        d = t[t.index('## D.'):t.index('## E.')] if '## E.' in t else t[t.index('## D.'):]
+        words = [w.strip() for ln in b.splitlines()[1:] if ln.strip() and not ln.startswith('옵션')
+                 for w in ln.split(',') if w.strip()]
+        lat = [w for w in words if re.fullmatch(r'[A-Za-z0-9 \-]+', w)]
+        ev = (re.compile(r'(?<![A-Za-z])(' + '|'.join(map(re.escape, lat)) + r')(?![A-Za-z])', re.I), [w.lower() for w in words if w not in lat])
+        tier1 = [x.strip() for ln in c.splitlines() if ln.startswith('- ') for x in ln.split(':', 1)[-1].split(',') if x.strip()]
+        ents = []
+        for ln in d.splitlines():
+            if ln.startswith('- ') and '=' in ln:
+                names = [x.strip() for x in ln[2:].split('=') if x.strip()]
+                for nm in names:
+                    if re.fullmatch(r'[A-Za-z0-9 .,&\'-]+', nm):
+                        ents.append((re.compile(r'(?<![A-Za-z])' + re.escape(nm) + r'(?![A-Za-z])', re.I if len(nm) > 3 else 0), names[0]))
+                    else:
+                        ents.append((nm.lower(), names[0]))
+        _SRC = {'ev': ev, 'tier1': tier1, 'ents': ents}
+    return _SRC
+
+
+def ev_ok(t):
+    rx, other = src_info()['ev']
+    return bool(rx.search(t)) or any(w in t.lower() for w in other)
+
+
+def entities(t):
+    out = set()
+    for pat, canon in src_info()['ents']:
+        if (pat in t.lower()) if isinstance(pat, str) else pat.search(t):
+            out.add(canon)
+    return out
+
+
+def numbers(t):
+    """제목의 수치 토큰. 강한 수치(3자리 이상, 소수, %·단위 붙음)는 '!'를 앞에 붙임."""
+    out = set()
+    for m in re.finditer(r'(\d[\d,.]*\d|\d)\s*(%|퍼센트|万|억|조|GWh|MWh|kWh|대|座|站|곳|개사|bn|billion|million|亿)?', t):
+        x, unit = m.group(1).replace(',', ''), m.group(2)
+        if len(x.replace('.', '')) < 2 or re.fullmatch(r'(19|20)\d\d', x): continue
+        strong = len(x.replace('.', '')) >= 3 or '.' in x or bool(unit)
+        out.add(('!' if strong else '') + x)
+    return out
+
+
+STOP = set('''about after again against also amid aims battery batteries batterie electric electrique elektro elektroauto elektroautos
+vehicle vehicles fahrzeug fahrzeuge cars auto autos with from into over under their this that will would could should what when where which
+while more than first year years new neue neuen news report reports says said plans plan launch launches million billion euro euros dollar
+china chinese europe european germany german america american japan japanese korea korean india british britain britische unter nach
+jetzt wird werden sind eine einen einem einer mehr ohne sowie gegen beim zum zur über durch auch noch nicht ihre seine soll sollen week
+market markets price prices sales production produktion company companies group charging charge laden ladepark lithium'''.split())
+
+
+def pnouns(t):
+    """제목의 라틴 고유어 후보(4자 이상, 한쪽 제목에서라도 대문자로 시작). 같은 기사의 영·독 번역판을 묶는 데 씀."""
+    return {w.lower() for w in re.findall(r'[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]{3,}', t) if w[0].isupper() and w.lower() not in STOP}
+
+
+def same_event(a, b, r):
+    if len(a['_pn'] & {w.lower() for w in re.findall(r'[A-Za-zÄÖÜäöüß\-]{4,}', b['title'])}) >= 2 and \
+       len(b['_pn'] & {w.lower() for w in re.findall(r'[A-Za-zÄÖÜäöüß\-]{4,}', a['title'])}) >= 2:
+        return True
+    if not (a['_en'] & b['_en']): return False
+    strong = {x for x in a['_nu'] if x.startswith('!')} & {x for x in b['_nu'] if x.startswith('!')}
+    plain = {x.lstrip('!') for x in a['_nu']} & {x.lstrip('!') for x in b['_nu']}
+    return bool(strong) or len(plain) >= 2 or r >= 0.65
+
+
+def ckey(u):
+    k = nurl(u)
+    k = re.sub(r'\.m\.', '.', k)
+    return re.sub(r'(/amp/?|[?&]amp=1)$', '', k)
+
+
+def ntitle(t):
+    t = re.sub(r'^\[이월\]\s*', '', t)
+    t = re.sub(r'[\[【(（].{0,20}?[\]】)）]', ' ', t)
+    return re.sub(r'[\W_]+', '', t.lower())
+
+
+def region_of(o):
+    if o.get('region'): return o['region']
+    h = host(o['url'])
+    return next((r for tld, r in TLD_RGN if h.endswith(tld) or tld + '/' in o['url']), '')
+
+
+def label(o):
+    return (o.get('outlet') or host(o['url'])) + (f" ({o['src']})" if o['kind'] == 'list' else ' (검색)')
+
+
+def score_item(o):
+    t, tags = o['title'], []
+    if R1.search(t) or (INS.search(t) and BAT.search(t)):
+        sc = 3; tags.append('R1:' + (R1.search(t) or INS.search(t)).group(0))
+    elif R2.search(t):
+        sc = 2; tags.append('R2:' + R2.search(t).group(0))
+    elif ev_ok(t):
+        sc = 1
+    else:
+        sc = 0
+    if EXPL.search(t): sc -= 2; tags.append('해설형-2')
+    if LAUNCH.search(t): sc -= 1; tags.append('신차-1')
+    return sc, tags
+
+
+def cluster(cands, sent):
+    """같은 URL·같은 기사(제목 0.85)·같은 사건(주체 일치 + 수치 일치 또는 제목 0.5)을 72시간 안에서 묶고 점수를 매김."""
+    import difflib
+    n = len(cands)
+    for o in cands:
+        o['_ck'], o['_nt'] = ckey(o['url']), ntitle(o['title'])
+        o['_en'], o['_nu'], o['_pn'] = entities(o['title']), numbers(o['title']), pnouns(o['title'])
+        o['_t'] = kst(o['pub'] or o['first_seen'])
+    par = list(range(n))
+
+    def find(i):
+        while par[i] != i:
+            par[i] = par[par[i]]; i = par[i]
+        return i
+    for i in range(n):
+        a = cands[i]
+        for j in range(i + 1, n):
+            b = cands[j]
+            if abs((a['_t'] - b['_t']).total_seconds()) > 72 * 3600: continue
+            same = a['_ck'] == b['_ck']
+            if not same and a['_nt'] and b['_nt']:
+                sm = difflib.SequenceMatcher(None, a['_nt'], b['_nt'])
+                r = sm.ratio() if sm.real_quick_ratio() >= 0.6 and sm.quick_ratio() >= 0.6 else 0
+                same = r >= 0.85 or same_event(a, b, r)
+            if same: par[find(i)] = find(j)
+    bucket = {}
+    for i in range(n): bucket.setdefault(find(i), []).append(cands[i])
+    tier1 = src_info()['tier1']
+    led = {norm(r['key'].split('/')[0]) for r in sent if r.get('key') and r['key'] != '-'}
+    groups = []
+    for mem in bucket.values():
+        for o in mem: o['portal'] = bool(o.get('portal')) or dom_in(host(o['url']), BLOCKED)
+        mem.sort(key=lambda o: (o['portal'], not dom_in(host(o['url']), tier1),
+                                RGN_ORDER.index(region_of(o)) if region_of(o) in RGN_ORDER else 9, o['_t']))
+        rep, best = mem[0], max((score_item(o) for o in mem), key=lambda x: x[0])
+        sc, tags = best
+        outlets = {o.get('outlet') or host(o['url']) for o in mem}
+        bonus = (['1등급'] if any(dom_in(host(o['url']), tier1) for o in mem) else []) + ([f'{len(outlets)}개 매체'] if len(outlets) >= 3 else [])
+        if bonus: sc += 1; tags = tags + ['·'.join(bonus) + '+1']  # 가산은 합쳐서 최대 1
+        if all(o.get('portal') for o in mem): sc -= 1; tags = tags + ['발견 전용-1']
+        hit = sorted({norm(e) for o in mem for e in o['_en']} & led)
+        if hit: tags = tags + ['[장부 유사: ' + ', '.join(hit)[:40] + ']']
+        if any(o['title'].startswith('[이월]') for o in mem): tags = tags + ['[이월]']
+        if rep['pub'] and kst(rep['first_seen']) - kst(rep['pub']) > dt.timedelta(hours=48): tags = tags + ['재게시?']
+        groups.append({'rep': rep, 'others': mem[1:], 'score': sc, 'tags': tags})
+    groups.sort(key=lambda g: (-g['score'], -len(g['others']), g['rep']['_t']), reverse=False)
+    return groups
 
 
 def host(u):

@@ -3,19 +3,29 @@
 
   python3 collect.py OUT_DIR
 
-sources.md A·B절과 watchlist.md를 읽어 목록·검색어를 조회하고,
+sources.md A·B·E절과 watchlist.md를 읽어 목록·검색어를 조회하고,
+검색어는 구글 뉴스 RSS(주)로, 실패·0건·변환 실패가 많으면 Bing 뉴스 RSS(예비)로 조회하고,
 OUT_DIR/items.jsonl에 처음 본 항목만 first_seen과 함께 추가합니다(10일 보관).
 OUT_DIR/status.json에는 목록·검색어별 조회 결과를 남깁니다.
 """
-import sys, os, re, json, html, hashlib, datetime as dt, urllib.parse
+import sys, os, re, json, html, time, hashlib, datetime as dt, urllib.parse
 from zoneinfo import ZoneInfo
 import requests, feedparser
+try:
+    from googlenewsdecoder import gnewsdecoder
+except ImportError:  # 없으면 구글 경로를 건너뛰고 Bing만 씀
+    gnewsdecoder = None
 
 KEEP_DAYS = 10
 VER = 3  # 형식이 바뀌면 올림. 다른 버전 항목은 버리고 다시 쌓음
 UA = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36',
       'Accept-Language': 'ko,en;q=0.8,zh;q=0.6,ja;q=0.5,de;q=0.4'}
 BING = 'https://www.bing.com/news/search?q={q}&format=RSS&qft=interval%3d%228%22'
+GOOG = 'https://news.google.com/rss/search?q={q}&hl={hl}&gl={gl}&ceid={ceid}'
+GN_WHEN = os.environ.get('GN_WHEN', '2d')
+FRESH_H = 72  # 게재 시각이 이보다 오래된 결과는 수집하지 않음
+EDITIONS = {'KR:ko': ('ko', 'KR'), 'JP:ja': ('ja', 'JP'), 'CN:zh-Hans': ('zh-CN', 'CN'), 'DE:de': ('de', 'DE'),
+            'US:en': ('en-US', 'US'), 'GB:en': ('en-GB', 'GB')}
 NOW = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
 TZ = {'한국': 'Asia/Seoul', '일본': 'Asia/Tokyo', '중국': 'Asia/Shanghai', 'EU': 'Europe/Berlin', '미국': 'America/New_York'}
 HAS_TZ = re.compile(r'([+-]\d{2}:?\d{2}|\bZ\b|\d(Z)$|\b(GMT|UTC|UT|[ECMP][SD]T|KST|JST|CST|CET|CEST|BST)\b)', re.I)
@@ -36,6 +46,9 @@ def parse_sources(path):
     txt = open(path, encoding='utf-8').read()
     a = txt[txt.index('## A.'):txt.index('## B.')]
     b = txt[txt.index('## B.'):txt.index('## C.')]
+    e = txt[txt.index('## E.'):] if '## E.' in txt else ''
+    doms = {k: [d.strip().lower() for d in v.split(',') if d.strip()]
+            for k, v in re.findall(r'^(제외|발견 전용):\s*(.+)$', e, re.M)}
     feeds = []
     for ln in a.splitlines():
         if not ln.startswith('- ') or ln.count('|') < 3 or '방식' in ln:
@@ -49,15 +62,50 @@ def parse_sources(path):
         if ln.startswith('옵션') or not ln.strip():
             continue
         words += [w.strip() for w in ln.split(',') if w.strip()]
-    return feeds, words
+    return feeds, words, doms.get('제외', []), doms.get('발견 전용', [])
+
+
+def edition(q):
+    if re.search('[\u3040-\u30ff]|価|中古', q): return 'JP:ja'
+    if re.search('[가-힣]', q): return 'KR:ko'
+    if re.search('[\u4e00-\u9fff]', q): return 'CN:zh-Hans'
+    if re.search('[äöüß]|gebraucht|elektro', q, re.I): return 'DE:de'
+    return 'US:en'
 
 
 def parse_watch(path):
+    """`- 검색어 | 지역판 | !` → [{'q','ed','brand'}]"""
     out = []
     for ln in open(path, encoding='utf-8').read().splitlines():
-        if ln.startswith('- '):
-            out.append(ln[2:].strip())
+        if not ln.startswith('- '): continue
+        p = [x.strip() for x in ln[2:].split('|')]
+        ed = p[1] if len(p) > 1 and p[1] in EDITIONS else edition(p[0])
+        out.append({'q': p[0], 'ed': ed, 'brand': len(p) > 2 and p[2] == '!'})
     return out
+
+
+def dom_in(u, doms):
+    m = re.match(r'https?://([^/]+)', u or '')
+    h = m.group(1).lower() if m else ''
+    return any(h == d or h.endswith('.' + d) for d in doms)
+
+
+def google_items(q, ed):
+    hl, gl = EDITIONS[ed]
+    fp = feedparser.parse(get(GOOG.format(q=urllib.parse.quote(f'{q} when:{GN_WHEN}'), hl=hl, gl=gl, ceid=ed)).content)
+    out = []
+    for e in fp.entries:
+        t = e.get('published_parsed')
+        src = (e.get('source') or {}).get('title', '')
+        title = html.unescape(e.get('title', '')).strip()
+        if src and title.endswith(' - ' + src): title = title[:-len(src) - 3].strip()
+        out.append({'title': title, 'url': e.get('link', ''), 'outlet': src,
+                    'pub': iso(min(dt.datetime(*t[:6], tzinfo=dt.timezone.utc), NOW + dt.timedelta(minutes=5))) if t else None})
+    return out
+
+
+def gkey(u):
+    return hashlib.sha1((u or '').encode()).hexdigest()[:12]
 
 
 def matcher(words):
@@ -115,16 +163,24 @@ def bing_url(link):
 
 def main(out):
     here = os.path.dirname(os.path.abspath(__file__))
-    feeds, words = parse_sources(os.path.join(here, 'sources.md'))
+    feeds, words, excl, portal = parse_sources(os.path.join(here, 'sources.md'))
     watch = parse_watch(os.path.join(here, 'watchlist.md'))
     ok = matcher(words)
+    brand = {w['q'] for w in watch if w['brand']}
+
+    def keep_watch(q, title):  # EV 문맥 필수, 업체명 검색어(!)만 고유 단어로도 통과
+        term = max(re.sub(r'"', '', q).split(), key=len).lower()
+        return ok(title) or (q in brand and term in title.lower())
     path = os.path.join(out, 'items.jsonl')
     old = []
     if os.path.exists(path):
         old = [json.loads(l) for l in open(path, encoding='utf-8') if l.strip()]
     lim = iso(NOW - dt.timedelta(days=KEEP_DAYS))
-    old = [o for o in old if o.get('v') == VER and o['first_seen'] >= lim]
+    old = [o for o in old if o.get('v') == VER and o['first_seen'] >= lim and not dom_in(o['url'], excl)
+           and (o['kind'] != 'watch' or keep_watch(o['src'][6:], o['title']))]
     known = {o['key'] for o in old}
+    known_g = {o['g'] for o in old if o.get('g')}
+    fresh = iso(NOW - dt.timedelta(hours=FRESH_H))
     status = {'generated_at': iso(NOW), 'lists': {}, 'watch': {}}
     try:
         prev = json.load(open(os.path.join(out, 'status_prev.json'), encoding='utf-8'))
@@ -136,14 +192,20 @@ def main(out):
     new = []
 
     def add(src, region, kind, it, first_seen, bf=False):
-        if not it['url'].startswith('http') or not it['title']:
+        if not it['url'].startswith('http') or not it['title'] or dom_in(it['url'], excl):
+            return False
+        if it['pub'] and it['pub'] < fresh:
             return False
         key = hashlib.sha1(nurl(it['url']).encode()).hexdigest()[:12]
         if key in known:
             return False
         known.add(key)
-        new.append({'v': VER, 'key': key, 'first_seen': first_seen, 'pub': it['pub'], 'src': src, 'region': region,
-                    'kind': kind, 'title': it['title'][:300], 'url': it['url'], 'bf': bf})
+        o = {'v': VER, 'key': key, 'first_seen': first_seen, 'pub': it['pub'], 'src': src, 'region': region,
+             'kind': kind, 'title': it['title'][:300], 'url': it['url'], 'bf': bf}
+        for f in ('eng', 'g', 'outlet'):
+            if it.get(f): o[f] = it[f]
+        if dom_in(it['url'], portal): o['portal'] = True
+        new.append(o)
         return True
 
     backfill = not old
@@ -161,23 +223,60 @@ def main(out):
             st['error'] = f'{type(e).__name__}: {str(e)[:160]}'
         st['last_nonzero'] = last_nz('lists', f['name'], st['fetched'])
         status['lists'][f['name']] = st
-    for q in watch:
-        st = {'ok': False, 'fetched': 0, 'matched': 0, 'new': 0, 'error': ''}
-        term = max(re.sub(r'"', '', q).split(), key=len).lower()  # 검색어의 고유 단어(업체명 등)
-        try:
-            items = rss_items(BING.format(q=urllib.parse.quote(q)))
-            st['ok'], st['fetched'] = True, len(items)
-            for it in items:
-                if not (ok(it['title']) or term in it['title'].lower()):  # 무관한 결과(휴대폰·감시카메라 등) 제거
-                    continue
-                st['matched'] += 1
-                it['url'] = bing_url(it['url'])
-                fs = it['pub'] if backfill and it['pub'] and it['pub'] <= iso(NOW) else iso(NOW)
-                st['new'] += add('watch:' + q, '', 'watch', it, fs, backfill and not it['pub'])
-        except Exception as e:  # noqa: BLE001
-            st['error'] = f'{type(e).__name__}: {str(e)[:160]}'
+    for w in watch:
+        q = w['q']
+        st = {'ok': False, 'fetched': 0, 'matched': 0, 'new': 0, 'error': '', 'eng': 'google', 'ed': w['ed']}
+        items, why = [], ''
+        if gnewsdecoder is None:
+            why = 'googlenewsdecoder 없음'
+        else:
+            try:
+                g = google_items(q, w['ed'])
+                st['fetched'] = len(g)
+                cand = [it for it in g if keep_watch(q, it['title']) and (not it['pub'] or it['pub'] >= fresh)]
+                st['matched'] = len(cand)
+                todo = [it for it in cand if gkey(it['url']) not in known_g]
+                okn = 0
+                for i in range(0, len(todo), 10):  # 새 항목만 원주소로 변환
+                    chunk = todo[i:i + 10]
+                    try:
+                        res = gnewsdecoder([it['url'] for it in chunk], interval=1)
+                    except Exception as e:  # noqa: BLE001
+                        res = [{'success': False, 'message': str(e)}] * len(chunk)
+                    for it, d in zip(chunk, res):
+                        if d.get('success'):
+                            okn += 1
+                            items.append({**it, 'g': gkey(it['url']), 'url': d['decoded_url'], 'eng': 'google'})
+                    time.sleep(1)
+                st['decoded'], st['decode_fail'] = okn, len(todo) - okn
+                if not g:
+                    why = '구글 0건'
+                elif len(todo) >= 2 and okn < len(todo) / 2:
+                    why = f'변환 실패 {len(todo) - okn}/{len(todo)}'
+                st['ok'] = True
+            except Exception as e:  # noqa: BLE001
+                why = f'구글 오류 {type(e).__name__}: {str(e)[:120]}'
+        if why:  # 예비: Bing
+            st['fallback'] = why
+            st['eng'] = 'bing'
+            try:
+                b = rss_items(BING.format(q=urllib.parse.quote(q)))
+                st['ok'], st['fetched'] = True, len(b)
+                items = []
+                for it in b:
+                    if keep_watch(q, it['title']):
+                        it['url'] = bing_url(it['url'])
+                        items.append({**it, 'eng': 'bing'})
+                st['matched'] = len(items)
+            except Exception as e:  # noqa: BLE001
+                st['error'] = f'{why} / Bing {type(e).__name__}: {str(e)[:120]}'
+        for it in items:
+            fs = it['pub'] if backfill and it['pub'] and it['pub'] <= iso(NOW) else iso(NOW)
+            st['new'] += add('watch:' + q, '', 'watch', it, fs, backfill and not it['pub'])
+        known_g.update(it['g'] for it in items if it.get('g'))
         st['last_nonzero'] = last_nz('watch', q, st['fetched'])
         status['watch'][q] = st
+        time.sleep(1)
     os.makedirs(out, exist_ok=True)
     with open(path, 'w', encoding='utf-8') as fh:
         for o in old + new:

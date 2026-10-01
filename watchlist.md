@@ -1,6 +1,7 @@
 # EV 시장·정책 브리핑 추적 목록
 
-사업 핵심 질문(OEM을 거치지 않는 배터리 데이터 접근, 상태 평가, 잔존가치, 보험, 제도 편입)에 닿는 대상을 매시간 표적 검색합니다. collect.py가 한 줄에 검색어 하나씩 Bing 뉴스 RSS(최근 1주)로 조회해 items.jsonl에 쌓습니다. 제목에 sources.md B절 단어나 검색어의 고유 단어(업체명 등)가 있는 결과만 남깁니다.
+사업 핵심 질문(OEM을 거치지 않는 배터리 데이터 접근, 상태 평가, 잔존가치, 보험, 제도 편입)에 닿는 대상을 매시간 표적 검색합니다. collect.py가 한 줄에 검색어 하나씩 구글 뉴스 RSS(최근 2일)로 조회하고, 조회 실패·0건·원주소 변환 실패가 많으면 Bing 뉴스 RSS로 대신 조회해 items.jsonl에 쌓습니다. 제목에 sources.md B절 단어가 있는 결과만 남기고, `!` 표시 검색어(업체명)는 검색어의 고유 단어만 있어도 남깁니다.
+형식: `- 검색어 | 지역판 | !` (지역판·!는 생략 가능). 지역판은 KR:ko, JP:ja, CN:zh-Hans, DE:de, US:en, GB:en 중 하나이며, 생략하면 검색어 글자로 정합니다.
 작성 요령: 따옴표 없는 2~3단어 조합이 가장 잘 잡힙니다. 따옴표는 굳어진 용어·고유명사에만 쓰고, OR 묶음은 쓰지 않습니다.
 교체 기준: data 브랜치 status.json의 검색어별 새 항목 수와 run_log 수록 출처를 보고, 새 항목은 많은데 수록이 이어서 0인 검색어와 prep이 "48시간 넘게 0건"으로 경고한 검색어부터 바꿉니다.
 
@@ -16,12 +17,12 @@
 - 电池 数字护照
 
 ## 배터리 진단·데이터 기업
-- Aviloo battery
-- TWAICE battery
-- "Recurrent" EV battery
-- "Cox Automotive" battery health
-- DEKRA battery test
-- 민테크 배터리
+- Aviloo battery | | !
+- TWAICE battery | | !
+- "Recurrent" EV battery | | !
+- "Cox Automotive" battery health | | !
+- DEKRA battery test | | !
+- 민테크 배터리 | | !
 - EV battery diagnostics
 
 ## 중고·잔존가치
@@ -30,7 +31,7 @@
 - used EV prices
 - gebrauchte Elektroautos Batterie
 - 二手新能源车 保值
-- 中古EV 価格
+- 中古EV 価格 | JP:ja
 
 ## 보험·금융
 - 전기차 보험료

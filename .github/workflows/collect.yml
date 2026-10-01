@@ -23,7 +23,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install -q feedparser==6.0.11 requests==2.32.3
+      - run: pip install -q feedparser==6.0.11 requests==2.32.3 googlenewsdecoder==0.2.1
       - name: 이전 데이터 받기(있는데 못 받으면 중단해 이력 초기화 방지)
         run: |
           mkdir -p out
