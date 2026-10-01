@@ -27,8 +27,8 @@ FRESH_H = 72  # 게재 시각이 이보다 오래된 결과는 수집하지 않�
 CAP = 15  # 검색어 하나가 한 번 수집에 넣는 새 항목 상한(최신순)
 DECODE_BUDGET = int(os.environ.get('DECODE_BUDGET', '300'))  # 한 번 수집에서 원주소 변환에 쓰는 최대 초. 넘으면 남은 것은 다음 수집으로
 # 구매 가이드·해설형 제목(뉴스 아님). 검색 결과에만 적용
-GUIDE = re.compile(r'值不值得买|值得买吗|值不值|FAQ|怎么选|榜单|排行榜|攻略|避坑|指南|吗？|'
-                   r'방법|점검 순서|하는 법|총정리|체크리스트|'
+GUIDE = re.compile(r'值不值得买|值得买吗|值不值|FAQ|怎么选|榜单|排行榜|攻略|避坑|购车指南|选车指南|吗？|'
+                   r'(확인|구매|점검|고르는|선택|읽는) 방법|점검 순서|하는 법|총정리|체크리스트|'
                    r'\bhow to\b|buyer.?s guide|\btips\b|\bexplained\b|選び方|おすすめ|ランキング', re.I)
 EDITIONS = {'KR:ko': ('ko', 'KR'), 'JP:ja': ('ja', 'JP'), 'CN:zh-Hans': ('zh-CN', 'CN'), 'DE:de': ('de', 'DE'),
             'US:en': ('en-US', 'US'), 'GB:en': ('en-GB', 'GB')}
@@ -118,7 +118,7 @@ def gkey(u):
 def matcher(words):
     latin = [w for w in words if re.fullmatch(r'[A-Za-z0-9 \-]+', w)]
     other = [w for w in words if w not in latin]
-    rx = re.compile(r'(?<![A-Za-z])(' + '|'.join(re.escape(w) for w in latin) + r')(?![A-Za-z])', re.I)
+    rx = re.compile(r'(?<![A-Za-z])(' + '|'.join(re.escape(w).replace(r'\ ', r'[\s\-]') for w in latin) + r')(?![A-Za-z])', re.I)
     return lambda t: bool(rx.search(t)) or any(w.lower() in t.lower() for w in other)
 
 
@@ -175,10 +175,13 @@ def main(out):
     ok = matcher(words)
     brand = {w['q'] for w in watch if w['brand']}
 
-    def keep_watch(q, title):  # EV 문맥 필수(업체명 검색어(!)는 고유 단어로도 통과), 가이드·해설형 제외
+    def brand_term(q):  # 업체명: 따옴표 안 문구, 없으면 첫 단어
+        m = re.search(r'"([^"]+)"', q)
+        return (m.group(1) if m else q.split()[0]).lower()
+
+    def keep_watch(q, title):  # EV 문맥 필수(업체명 검색어(!)는 업체명만 있어도 통과), 가이드·해설형 제외
         if GUIDE.search(title): return False
-        term = max(re.sub(r'"|\bOR\b', '', q).split(), key=len).lower()
-        return ok(title) or (q in brand and term in title.lower())
+        return ok(title) or (q in brand and brand_term(q) in title.lower())
 
     def bing_watch(q):
         b = rss_items(BING.format(q=urllib.parse.quote(q)))
@@ -188,7 +191,6 @@ def main(out):
                 it['url'] = bing_url(it['url'])
                 res.append({**it, 'eng': 'bing'})
         return len(b), res
-    deadline = time.time() + DECODE_BUDGET
     path = os.path.join(out, 'items.jsonl')
     old = []
     if os.path.exists(path):
@@ -241,6 +243,7 @@ def main(out):
             st['error'] = f'{type(e).__name__}: {str(e)[:160]}'
         st['last_nonzero'] = last_nz('lists', f['name'], st['fetched'])
         status['lists'][f['name']] = st
+    deadline = time.time() + DECODE_BUDGET  # 목록 수집 시간과 무관하게 변환 시간을 셈
     off = NOW.hour % len(watch) if watch else 0  # 시간마다 시작 검색어를 바꿔 변환 시간 부족이 한쪽에 몰리지 않게 함
     for w in watch[off:] + watch[:off]:
         q = w['q']
@@ -278,6 +281,8 @@ def main(out):
                 st['decoded'], st['decode_fail'] = okn, tried - okn
                 if not g:
                     why = '구글 0건'
+                elif tried == 0 and st.get('decode_later'):
+                    why = '변환 시간 초과'
                 elif tried >= 2 and okn < tried / 2:
                     why = f'변환 실패 {tried - okn}/{tried}'
                 st['ok'] = True
