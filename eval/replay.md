@@ -12,12 +12,12 @@
 
 1. 저장소 루트에서 `python3 eval/score.py --prep-only` → `/tmp/ev/candidates.md`, `/tmp/ev/sent.md` 준비
 2. 실행 에이전트에게 아래 지시와 프롬프트 파일을 줍니다.
-3. 결과를 `/tmp/ev` 밖(예: 작업 폴더의 `replay_<프롬프트판>.json`)에 복사합니다. 채점기가 `/tmp/ev`를 비우기 때문입니다.
+3. 결과(briefing.json, decisions.tsv)를 `/tmp/ev` 밖(예: 작업 폴더의 `replay_<프롬프트판>.json`)에 복사합니다. 채점기가 `/tmp/ev`를 비우기 때문입니다. decisions.tsv는 실행 간 판정이 갈릴 때 원인을 찾는 데 씁니다.
 4. `python3 eval/score.py --briefing replay_<프롬프트판>.json`
 
 ## 실행 에이전트 지시문
 
-> 브리핑 프롬프트(첨부 파일)의 재현 실행입니다. `/tmp/ev`는 이미 준비돼 있습니다(1절 1~4번은 하지 않음). 2~6절을 따르고 7절은 1·2번만 합니다(`python3 /tmp/ev/build.py schema`, briefing.json 작성, `python3 /tmp/ev/build.py check /tmp/ev/briefing.json`). 메모리 도구, render, SendUserFile, PushNotification은 쓰지 않습니다. 장부는 `/tmp/ev/sent.md`입니다. 웹 호출 예산은 프롬프트대로입니다. 끝나면 `/tmp/ev/briefing.json`을 지정 경로에 복사하고, 판정한 후보 번호별 결정(제외 사유 포함)을 한 줄씩 보고합니다.
+> 브리핑 프롬프트(첨부 파일)의 재현 실행입니다. `/tmp/ev`는 이미 준비돼 있습니다(1절 1~4번은 하지 않음). 2~6절을 따르고 7절은 1·2번만 합니다(`python3 /tmp/ev/build.py schema`, briefing.json 작성, `python3 /tmp/ev/build.py check /tmp/ev/briefing.json`). 메모리 도구, render, SendUserFile, PushNotification은 쓰지 않습니다. 장부는 `/tmp/ev/sent.md`입니다. 웹 호출 예산은 프롬프트대로입니다. 검토한 모든 후보(제목만 보고 넘긴 것 포함)를 `/tmp/ev/decisions.tsv`에 한 줄씩 `후보번호<TAB>본문열람(y/n/실패)<TAB>결정(핵심/참고/제외/이월)<TAB>사유`로 적습니다. 끝나면 `/tmp/ev/briefing.json`과 `decisions.tsv`를 지정 경로에 복사하고, 결과를 요약해 보고합니다.
 
 ## 한계
 
