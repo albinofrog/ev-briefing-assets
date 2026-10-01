@@ -25,7 +25,7 @@ GOOG = 'https://news.google.com/rss/search?q={q}&hl={hl}&gl={gl}&ceid={ceid}'
 GN_WHEN = os.environ.get('GN_WHEN', '2d')
 FRESH_H = 72  # 게재 시각이 이보다 오래된 결과는 수집하지 않음
 CAP = 15  # 검색어 하나가 한 번 수집에 넣는 새 항목 상한(최신순)
-DECODE_BUDGET = 180  # 한 번 수집에서 원주소 변환에 쓰는 최대 초. 넘으면 남은 것은 다음 수집으로
+DECODE_BUDGET = int(os.environ.get('DECODE_BUDGET', '300'))  # 한 번 수집에서 원주소 변환에 쓰는 최대 초. 넘으면 남은 것은 다음 수집으로
 # 구매 가이드·해설형 제목(뉴스 아님). 검색 결과에만 적용
 GUIDE = re.compile(r'值不值得买|值得买吗|值不值|FAQ|怎么选|榜单|排行榜|攻略|避坑|指南|吗？|'
                    r'방법|점검 순서|하는 법|총정리|체크리스트|'
@@ -241,7 +241,8 @@ def main(out):
             st['error'] = f'{type(e).__name__}: {str(e)[:160]}'
         st['last_nonzero'] = last_nz('lists', f['name'], st['fetched'])
         status['lists'][f['name']] = st
-    for w in watch:
+    off = NOW.hour % len(watch) if watch else 0  # 시간마다 시작 검색어를 바꿔 변환 시간 부족이 한쪽에 몰리지 않게 함
+    for w in watch[off:] + watch[:off]:
         q = w['q']
         st = {'ok': False, 'fetched': 0, 'matched': 0, 'new': 0, 'error': '', 'eng': 'google', 'ed': w['ed']}
         items, why = [], ''
