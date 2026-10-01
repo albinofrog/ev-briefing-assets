@@ -63,7 +63,7 @@ SCHEMA = r'''
   ],
   "calls": {"본문": 22, "원출처·원매체": 8, "실패목록": 3},   // 웹 호출(WebFetch·WebSearch) 수
   "dropped": ["제목 앞 20자 | 사유", "…"],   // 주요 탈락 5건 이내
-  "deferred": ["c12", "c40"],                // 예산 때문에 본문을 열지 못해 다음 회차로 넘길 후보 번호(30개 이내)
+  "deferred": ["c12", "c40-1"],              // 예산 때문에 본문을 열지 못해 다음 회차로 넘길 후보 번호(↳ 줄은 c40-1 형식, 30개 이내)
   "errors": ["도구 오류 원문 요약"]
 }
 '''
@@ -174,9 +174,10 @@ def prep():
                     fh.write(f"c{n} | {o['title'][:70]} | {o['url']}{' (+' + str(len(g['others'])) + '건)' if g['others'] else ''}\n")
                     continue
                 fh.write(f"c{n} | 점수 {g['score']} {' '.join(g['tags'])} | {when} | {o['title']} | {label(o)} | {o['url']}\n")
-                for m in g['others'][:4]:
+                for j, m in enumerate(g['others'][:4], 1):
+                    keys[f'c{n}-{j}'] = m['key']  # ↳ 줄도 따로 이월할 수 있게 번호를 줌
                     mw = f"{kst(m['pub']):%m-%d %H:%M}" if m['pub'] else f"처음 확인 {kst(m['first_seen']):%m-%d %H:%M}"
-                    fh.write(f"   ↳ {mw} | {label(m)} | {m['title'][:60]} | {m['url']}\n")
+                    fh.write(f"   ↳ c{n}-{j} | {mw} | {label(m)} | {m['title'][:60]} | {m['url']}\n")
                 if len(g['others']) > 4:
                     fh.write(f"   ↳ 외 {len(g['others']) - 4}건\n")
     by = {}
@@ -646,7 +647,7 @@ def check(path, quiet=False):
     except FileNotFoundError:
         ck = {}
     if not isinstance(dfr, list) or len(dfr) > 30 or any(x not in ck for x in dfr):
-        E.append('deferred는 candidates.md의 후보 번호(c12 형식) 목록, 30개 이내')
+        E.append('deferred는 candidates.md의 후보 번호(c12, ↳ 줄은 c12-1 형식) 목록, 30개 이내')
     ncore = sum(1 for it in items if it.get('tier') == 'core')
     need_n = needed_tops(items)
     ranks = sorted(t for t, _ in tops)
