@@ -64,11 +64,16 @@ def main():
     ap.add_argument('--build', default=os.path.join(REPO, 'build.py'))
     ap.add_argument('--briefing')
     ap.add_argument('--cases', default=os.path.join(HERE, 'cases.json'))
+    ap.add_argument('--prep-only', action='store_true', help='스냅샷으로 prep만 돌려 /tmp/ev를 재현 실행용으로 준비하고 끝냄(eval/replay.md)')
     a = ap.parse_args()
     spec = json.load(open(a.cases, encoding='utf-8'))
     snap = os.path.join(HERE, spec['snapshot'])
     b = load_build(os.path.abspath(a.build))
     W = run_prep(b, snap, os.path.dirname(os.path.abspath(a.build)))
+    if a.prep_only:
+        shutil.copy(os.path.abspath(a.build), f'{W}/build.py')  # 재현 에이전트가 schema·check에 씀
+        print(f'준비 완료: {W}/candidates.md, 장부 {W}/sent.md (스냅샷 {spec["snapshot"]})')
+        return
     groups = parse_candidates(f'{W}/candidates.md')
     meta = json.load(open(f'{W}/cand_meta.json'))
     find = lambda m: next((g for g in groups if any(m in l for l in g['lines'])), None)
