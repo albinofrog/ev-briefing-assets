@@ -8,7 +8,7 @@
   - `judge`: 수록 여부(제외·참고·핵심)·관련도 문항. 스냅샷으로 돌린 회차의 briefing.json이 있어야 채점.
   - `known_gap`: 아직 해결 못 한 알려진 공백. 회귀 판정에서 빠지고, 해결 수를 따로 셉니다.
   - `status`: `draft`는 사용자 검토 전, `reviewed`는 검토를 마친 정답.
-- `score.py`: 채점기.
+- `score.py`: 채점기. `replay.md`: 판정 문항용 재현 실행 절차. `results/`: 재현 결과와 점수 기록.
 
 ```
 python3 eval/score.py                         # 현재 build.py

@@ -99,6 +99,10 @@ def main():
             d = json.load(open(a.briefing, encoding='utf-8'))
             url = full_url('\n'.join(g['lines']), c['match']) if g else None
             grp = set(meta.get(b.uhash(url), {}).get('grp', [])) if url else set()
+            for m in c.get('also', []):  # 같은 사건이 prep에서 다른 묶음으로 나뉜 경우
+                ga = find(m)
+                ua = full_url('\n'.join(ga['lines']), m) if ga else None
+                if ua: grp |= set(meta.get(b.uhash(ua), {}).get('grp', []))
             hit = next((i for i in d['items'] if b.uhash(i['url']) in grp
                         or (i.get('origin') and i['origin'].get('url') and b.uhash(i['origin']['url']) in grp)
                         or any(h in i['url'] for h in c.get('accept_hosts', []))), None)
