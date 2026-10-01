@@ -38,13 +38,13 @@ GitHub Actions의 collect.py가 매시간 이 파일(A·B·E절)과 watchlist.md
 - eletric-vehicles.com(발견 전용, 리포트 URL로 쓰지 않음) | 미국 | rss | https://eletric-vehicles.com/feed/ | 전체
 
 ## B. 제목 필터 단어
-옵션이 비어 있는 목록은 제목에 아래 단어 중 하나가 있어야 수집합니다. 영문은 단어 경계로, 나머지는 포함 여부로 봅니다(대소문자 무시).
+옵션이 비어 있는 목록은 제목에 아래 단어 중 하나가 있어야 수집합니다. 영문은 단어 경계로(단어 사이 공백은 하이픈도 허용), 나머지는 포함 여부로 봅니다(대소문자 무시).
 
-전기차, 전기자동차, 배터리, 이차전지, 2차전지, 전고체, 리튬, 니켈, 양극재, 충전, 중고차, 자동차보험, 잔존가치, 잔가, 리스, 보조금, 세액공제, 관세, 연비, 완성차, 현대차, 기아, LG에너지솔루션, 삼성SDI, SK온, 사용후, 재제조, 이력관리
-EV, EVs, electric vehicle, electric vehicles, electric car, battery, batteries, lithium, charging, used car, used cars, residual, lease, leasing, auto insurance, tariff, tariffs, subsidy, tax credit, fuel economy, CAFE, emissions, right to repair, vehicle data, recycling, second-life, OBD, telematics
-电动, 新能源, 电池, 锂, 充电, 换电, 二手车, 保值, 车险, 关税, 补贴, 购置税, 回收, 溯源
-電気自動車, 電池, バッテリー, リチウム, 充電, 中古車, 残価, 自動車保険, 関税, 補助金, 燃費, リサイクル
-Elektroauto, Elektroautos, E-Auto, E-Autos, Batterie, Akku, Lithium, Gebrauchtwagen, Restwert, Leasing, Kfz-Versicherung, Zoll, Zölle, Förderung, Flottengrenzwert
+전기차, 전기자동차, 배터리, 이차전지, 2차전지, 전고체, 리튬, 니켈, 양극재, 충전, 중고차, 자동차보험, 잔존가치, 잔가, 리스, 보조금, 세액공제, 관세, 연비, 완성차, 현대차, 기아, LG에너지솔루션, 삼성SDI, SK온, 사용후, 재제조, 이력관리, 자동차 데이터, 차량 데이터, 데이터 개방, 손해율, 자보, 차보험, 친환경차, 잔존수명, 성능점검, 중고 전기차
+EV, EVs, electric vehicle, electric vehicles, electric car, battery, batteries, lithium, charging, used car, used cars, residual, lease, leasing, auto insurance, tariff, tariffs, subsidy, tax credit, fuel economy, CAFE, emissions, right to repair, vehicle data, recycling, second-life, OBD, telematics, Data Act, connected car, in-vehicle data, data access, BMS, state of health, SOH, used vehicle, used vehicles, pre-owned, depreciation, remarketing, residual values, insurer, insurers
+电动, 新能源, 电池, 锂, 充电, 换电, 二手车, 保值, 车险, 关税, 补贴, 购置税, 回收, 溯源, 汽车数据, 车辆数据, 动力电池, 退役电池, 电池健康
+電気自動車, 電池, バッテリー, リチウム, 充電, 中古車, 残価, 自動車保険, 関税, 補助金, 燃費, リサイクル, 車両データ, 電池診断
+Elektroauto, Elektroautos, E-Auto, E-Autos, Batterie, Akku, Lithium, Gebrauchtwagen, Restwert, Leasing, Kfz-Versicherung, Zoll, Zölle, Förderung, Flottengrenzwert, Datenzugang, Fahrzeugdaten, Data Act, Batteriezustand, Restwerte
 
 ## C. 1등급 도메인
 같은 사건을 여러 매체가 보도했을 때 실을 URL을 고르는 데만 씁니다.

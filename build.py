@@ -155,6 +155,13 @@ def prep():
         o['title'] = ('[이월] ' if carried else '') + clean_title(o['title'])
         cands.append(o)
     groups = cluster(cands, sent if isinstance(sent, list) else [])
+    meta = {}  # check가 묶음의 목록 시각을 대조하는 데 씀
+    for g in groups:
+        mem = [g['rep']] + g['others']
+        pubs = [o['pub'] for o in mem if o['pub']]
+        for o in mem:
+            meta[uhash(o['url'])] = {'own': o['pub'], 'min': min(pubs) if pubs else None}
+    json.dump(meta, open(f'{W}/cand_meta.json', 'w'))
     keys = {}
     bands = [('점수 3 이상: 모두 검토', lambda g: g['score'] >= 3), ('점수 2', lambda g: g['score'] == 2),
              ('점수 1 이하: 제목만, 축에 해당할 만한 것만 확인', lambda g: g['score'] <= 1)]
@@ -215,15 +222,21 @@ def prep():
     json.dump(st, open(f'{W}/state.json', 'w'))
 
 
-R1 = re.compile(r'\bSOH\b|state of health|battery (health|score|check|test|certificate|report)|배터리 (상태|건강|수명|성능|점수|진단|인증)|안전지수|'
-                r'잔존가치|잔가|감가|residual value|retains? (their |its )?value|depreciation|Restwert|Wertverlust|残価|残存価値|減価|保值|\bOBD\b|'
-                r'data access|Data Act|right to repair|수리권|데이터 개방|차량 데이터|vehicle data|电池健康|电池检测|バッテリー(診断|状態|劣化)|Batterie(zustand|zertifikat|test|check)|'
-                r'degradation|(lose|lost|loses|retain)s? (about |only )?[\d.]+% of (their |its )?capacity|capacity (loss|fade)|배터리 열화|电池衰减|容量衰减|劣化率', re.I)
-R2 = re.compile(r'passport|여권|护照|이력\s?관리|溯源|second.?life|재사용|재제조|사용후|换电|battery swap|배터리 교환|recycl|回收|재활용|'
-                r'used (ev|car|electric)|second.?hand|pre.?owned|중고|二手|中古|Gebraucht|换电站|insurance|보험|车险|保険|Versicherung|diagnos|진단|telematics|텔레매틱스|\bleas(e|ing)\b|리스 만기|리스사|잔가', re.I)
+S = r'[\s\-]'  # 영문 단어 사이 공백·하이픈
+R1 = re.compile(r'\bSOH\b|state' + S + 'of' + S + 'health|battery' + S + '(health|score|check|test|certificate|report|data|passport data)|\bBMS\b|'
+                r'배터리 (상태|건강|점수|진단|인증|데이터|성능\s?(평가|인증|점검)|수명\s?(평가|예측|진단))|잔존\s?수명|안전지수|성능점검|'
+                r'잔존가치|잔가|감가|residual' + S + 'values?|retains?' + S + '(their |its )?value|depreciation|(used' + S + '|second' + S + 'hand )?(EV|electric' + S + 'vehicle)s?' + S + 'values?|'
+                r'Restwert|Wertverlust|残価|残存価値|減価|\bOBD\b|data' + S + 'access|Data' + S + 'Act|right' + S + 'to' + S + 'repair|in' + S + 'vehicle' + S + 'data|'
+                r'수리권|데이터 개방|차량 데이터|자동차 데이터|vehicle' + S + 'data|Fahrzeugdaten|Datenzugang|汽车数据|车辆数据|車両データ|'
+                r'电池健康|电池检测|バッテリー(診断|状態|劣化)|電池診断|Batterie(zustand|zertifikat|gesundheit|test|check)|'
+                r'degradation|(lose|lost|loses|retain)s?' + S + '(about |only )?[\d.]+%' + S + '(of|per)|capacity' + S + '(loss|fade)|batter(y|ies)' + S + '(degrade|degradation|durability)|durability|'
+                r'배터리 열화|电池衰减|容量衰减|劣化率', re.I)
+R2 = re.compile(r'passport|여권|护照|数字身份证|이력\s?관리|溯源|second' + S + 'life|재사용|재제조|사용후|은퇴(한)? 배터리|退役电池|换电|battery' + S + 'swap|배터리 교환|recycl|回收|재활용|'
+                r'used' + S + '(ev|car|electric|vehicle)|second' + S + 'hand|pre' + S + '?owned|remarketing|중고|二手|中古|Gebraucht|保值|insurance|insurer|보험|손해율|车险|保険|Versicherung|'
+                r'diagnos|진단|telematics|텔레매틱스|connected' + S + 'car|\blease\b|\bleasing\b|리스 만기|리스사|换电站', re.I)
 INS = re.compile(r'insurance|보험|车险|保険|Versicherung', re.I)
 BAT = re.compile(r'batter|배터리|电池|バッテリー|電池|Batterie|Akku', re.I)
-EXPL = re.compile(r'방법|점검 순서|하는 법|how to|FAQ|一文说清|\bReview\b|가이드|\bguide\b|\btips\b|알아보|總結|总结', re.I)
+EXPL = re.compile(r'(확인|구매|점검|고르는|선택|읽는) 방법|점검 순서|하는 법|how' + S + 'to|FAQ|一文说清|가이드(?!라인)|\bguide\b|\btips\b|알아보|總結|总结', re.I)
 LAUNCH = re.compile(r'시승|test drive|first drive|首发|上市|新车|발표회|출시 기념', re.I)
 RGN_ORDER = ['한국', 'EU', '미국', '중국', '일본', '']
 TLD_RGN = [('.kr', '한국'), ('.jp', '일본'), ('.cn', '중국'), ('.de', 'EU'), ('.fr', 'EU'), ('.uk', 'EU'), ('.eu', 'EU'),
@@ -247,7 +260,7 @@ def src_info():
         words = [w.strip() for ln in b.splitlines()[1:] if ln.strip() and not ln.startswith('옵션')
                  for w in ln.split(',') if w.strip()]
         lat = [w for w in words if re.fullmatch(r'[A-Za-z0-9 \-]+', w)]
-        ev = (re.compile(r'(?<![A-Za-z])(' + '|'.join(map(re.escape, lat)) + r')(?![A-Za-z])', re.I), [w.lower() for w in words if w not in lat])
+        ev = (re.compile(r'(?<![A-Za-z])(' + '|'.join(re.escape(w).replace(r'\ ', S) for w in lat) + r')(?![A-Za-z])', re.I), [w.lower() for w in words if w not in lat])
         tier1 = [x.strip() for ln in c.splitlines() if ln.startswith('- ') for x in ln.split(':', 1)[-1].split(',') if x.strip()]
         ents = []
         for ln in d.splitlines():
@@ -398,7 +411,7 @@ def cluster(cands, sent):
         sc, tags = best
         outlets = {o.get('outlet') or host(o['url']) for o in mem}
         bonus = (['1등급'] if any(dom_in(host(o['url']), tier1) for o in mem) else []) + ([f'{len(outlets)}개 매체'] if len(outlets) >= 3 else [])
-        if bonus: sc += 1; tags = tags + ['·'.join(bonus) + '+1']  # 가산은 합쳐서 최대 1
+        if bonus and sc >= 2: sc += 1; tags = tags + ['·'.join(bonus) + '+1']  # 가산은 관련 단어가 있는 묶음(기본 2점 이상)에만, 합쳐서 최대 1
         if all(o.get('portal') for o in mem): sc -= 1; tags = tags + ['발견 전용-1']
         hit = sorted({e for o in mem for e in o['_en'] if norm(e) in led})
         if hit: tags = tags + ['[장부 유사: ' + ', '.join(hit)[:40] + ']']
@@ -531,7 +544,13 @@ def check(path, quiet=False):
         sent = []
     elif sent == 'FAILED':
         Wn.append('sent.md 읽기 실패: 중복 판정 생략(추정 금지)')
-        sent = []
+        sent = None
+    sent_ok = sent is not None
+    sent = sent or []
+    try:
+        meta = json.load(open(f'{W}/cand_meta.json'))
+    except (FileNotFoundError, ValueError):
+        meta = {}
     urls, tops, cores = {}, [], []
     for i, it in enumerate(items, 1):
         L = f"[{i}] {str(it.get('headline') or '')[:24]}"
@@ -584,6 +603,14 @@ def check(path, quiet=False):
             ud = url_date(it['url'])
             if ud and ud < cutoff.date() - dt.timedelta(days=1) and not it.get('followup'):
                 E.append(f'{L}: URL 날짜 {ud}가 기준일 이전 → 제외')
+            mt = meta.get(uhash(it['url']))
+            if mt and not it.get('followup'):  # 후보 목록의 게재 시각과 대조
+                if mt['own'] and kst(mt['own']) < cutoff - dt.timedelta(hours=1):
+                    E.append(f"{L}: 목록 게재 시각 {kst(mt['own']):%m-%d %H:%M}이 수록 기준 이전 → 제외(새 단계면 followup)")
+                elif mt['min'] and mt['min'] != mt['own'] and kst(mt['min']) < cutoff:
+                    Wn.append(f"{L}: 같은 묶음의 다른 보도가 {kst(mt['min']):%m-%d %H:%M}(수록 기준 이전)에 나옴 → 같은 사건이면 제외, 묶음 오류면 그대로")
+                elif mt['min'] and has_t and fp > kst(mt['min']) + dt.timedelta(hours=1):
+                    Wn.append(f"{L}: first_public이 묶음의 가장 이른 목록 시각 {kst(mt['min']):%m-%d %H:%M}보다 늦음 → 같은 사건이면 그 시각 이하로")
         for u in [it['url']] + ([o['url']] if o else []):
             if dom_in(host(u), BLOCKED): E.append(f'{L}: 포털·발견 전용 URL 금지 {host(u)} → 원 매체 URL')
             if dom_in(host(u), EXCLUDED): E.append(f'{L}: 제외 출처(블로그·SNS·UGC) {host(u)}')
@@ -626,7 +653,7 @@ def check(path, quiet=False):
                 if ks[1] in GENERIC_ACT: Wn.append(msg + ' → 같은 사건이면 제외, 다른 사건이면 그대로')
                 else: E.append(msg + ' → 새 단계면 followup=true, 같은 사건이면 제외')
         if it.get('followup') and not any(key_sa(r['key'])[0] == key_sa(it['event_key'])[0] for r in sent):
-            Wn.append(f'{L}: followup=true인데 장부에 같은 주체 없음')
+            (E if sent_ok else Wn).append(f'{L}: followup=true인데 장부에 같은 주체 없음 → 새 사건이면 followup=false로 기준 시각 검사를 받음')
     evs, figs, subs = {}, {}, {}
     for i, it in enumerate(items, 1):
         if not isinstance(it.get('event_key'), str): continue
@@ -640,8 +667,13 @@ def check(path, quiet=False):
         if k[1] in GENERIC_ACT:
             if k[0] in subs: Wn.append(f"[{i}] 항목 {subs[k[0]]}와 주체가 같고 행위가 '{k[1]}' → 같은 사건인지 직접 대조")
             subs.setdefault(k[0], i); continue
-        if k in evs: E.append(f"[{i}] 같은 회차에 같은 사건(항목 {evs[k]}와 주체·행위 일치) → 하나만 남김(다른 언어판·다른 매체 중복 포함)")
-        evs.setdefault(k, i)
+        if k in evs:
+            j, fj = evs[k]
+            if fig and fj and fig != fj:
+                Wn.append(f"[{i}] 항목 {j}와 주체·행위가 같지만 대표 수치가 다름 → 다른 사건인지 확인")
+            else:
+                E.append(f"[{i}] 같은 회차에 같은 사건(항목 {j}와 주체·행위 일치) → 하나만 남김(다른 언어판·다른 매체 중복 포함)")
+        evs.setdefault(k, (i, fig))
     dfr = d.get('deferred', [])
     try:
         ck = json.load(open(f'{W}/cand_keys.json'))

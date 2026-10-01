@@ -1,0 +1,31 @@
+name: gverify
+# 시험 전용(gmain 분기). 운영 data를 시드로 새 수집기를 돌려 gdata 분기에 저장. main 반영 전 삭제
+on:
+  push:
+    branches: [gmain]
+permissions:
+  contents: write
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GN_WHEN: 3d
+      DECODE_BUDGET: 1500
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -q feedparser==6.0.11 requests==2.32.3 googlenewsdecoder==0.2.1
+      - run: |
+          mkdir -p out
+          git fetch -q origin data
+          git show FETCH_HEAD:items.jsonl > out/items.jsonl
+          git show FETCH_HEAD:status.json > out/status_prev.json
+      - run: python collect.py out
+      - run: |
+          cd out && rm -f status_prev.json
+          git init -q -b gdata && git add items.jsonl status.json
+          git -c user.name=gverify -c user.email=gverify@users.noreply.github.com commit -q -m "gverify $(date -u +%FT%TZ)"
+          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" gdata
