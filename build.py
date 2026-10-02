@@ -10,11 +10,11 @@
   python3 build.py seen URL ...    직접 찾은 기사 URL이 장부에 있는지 확인
 
   자가개선(전달 뒤):
-  python3 build.py probe           이번 회차 놓침 탐지 검색어 4개(/tmp/ev/rules.md 9절에서 /tmp/ev/metrics.md 회차 수로 순환)
+  python3 build.py probe           이번 회차 놓침 탐지 검색어 4개(rules.md 9절에서 metrics.md 회차 수로 순환, 검색어 언어로 연월을 붙임)
   python3 build.py board FILE [nodeliver]   briefing.json → 피드백 보드 db 쓰기 목록(/tmp/ev/board.json). 전달 실패면 nodeliver(항목 제외)
   python3 build.py guard OLD NEW   rules.md 고정 줄(사업 맥락·금지 항목·예산·금지 출처)이 바뀌었으면 종료 1
-  python3 build.py feedback DIR SINCE   보드에서 받은 문서(DIR/<컬렉션>/<id>.json) → 신호(/tmp/ev/signals.md)·정답 줄(/tmp/ev/gold.txt)
-  python3 build.py trace CODE URL[|제목] ...   URL(못 찾으면 제목)이 수집·후보·장부 어디서 빠졌는지 원인 코드 부여, signals.md에 추가
+  python3 build.py feedback DIR SINCE   보드에서 받은 문서(DIR/<컬렉션>/<id>.json) → 신호(signals.md)·놓침 제보(missed.txt)·정답(gold.txt)·결정(decisions.txt)
+  python3 build.py trace CODE URL[|제목] ...   URL(못 찾으면 제목)이 수집·후보·장부·이월 어디서 빠졌는지 원인 코드 부여, signals.md에 추가
   python3 build.py yield FILE      회차 지표 한 줄(/tmp/ev/metrics_line.txt)과 검색어별 최근 10회 기여(/tmp/ev/metrics.md 이력 사용)
   python3 build.py snapshot DIR    이번 회차 입력을 평가 세트 스냅샷으로 저장(수록 기준 8일 전 이후 항목만)
   python3 build.py cases SNAPDIR GOLD OUT   정답 줄(GOLD)을 그 스냅샷의 판정 문항 파일(OUT)로 변환
@@ -1025,7 +1025,7 @@ def trim(what):
 CAUSE = {'FP': '불필요 수록(사용자)', 'OVER': '등급 과대(사용자: 참고로 충분)', 'UNDER': '등급 과소(사용자: 핵심이어야)',
          'C1': '미수집(목록·검색어 공백)', 'C2': '수집됐으나 수록 기준 이전 판정', 'C3': '장부에 있음(중복 판정)',
          'C4': '후보 하위 구간(점수 공백)', 'C5': '후보 상위 구간인데 미수록(판정 공백)', 'C6': '이전 회차가 이미 보고 넘김(판정 공백)',
-         'C7': '수록됨(놓침 아님)'}
+         'C7': '수록됨(놓침 아님)', 'C8': '예산 부족으로 이월(판정 아님)'}
 
 
 def doc_rows(d, coll):
@@ -1049,7 +1049,13 @@ def probe():
     runs = len([l for l in (open(f'{W}/metrics.md').read().splitlines() if os.path.exists(f'{W}/metrics.md') else [])
                 if re.match(r'\d{4}-\d\d-\d\d \| ', l)])  # 발행 없는 날에도 도는 회차 수
     k = (runs * 4) % len(qs)
-    for i in range(4): print(qs[(k + i) % len(qs)])
+    s = kst(now_state()['start'])
+    mon = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][s.month - 1]
+    for i in range(4):  # 최근 기사가 잡히도록 검색어 언어에 맞춰 연월을 붙임
+        q = qs[(k + i) % len(qs)]
+        suf = (f'{s.year}년 {s.month}월' if re.search('[가-힣]', q) else f'{s.year}年{s.month}月' if re.search('[\u3040-\u30ff\u4e00-\u9fff]', q)
+               else f'{mon} {s.year}')
+        print(f'{q} {suf}')
 
 
 def board(path, delivered=True):
@@ -1093,24 +1099,30 @@ def feedback(d, since):
         if vmap[v]:
             sig.append(f"{vmap[v]} | 제{it['issue']:03d}호 | {it['headline'][:40]} | {it['url']} | R{it.get('relevance')} {tier} | {(f.get('note') or '').strip()[:80]}")
     last = max([o.get('issue') or 0 for o in items.values()] + [0]) or '-'  # 제보는 보드의 최신 호에 붙임
+    miss = []
     for m in doc_rows(d, 'missed'):
         if (m.get('at') or '') <= since or not m.get('url'): continue
-        sig.append(f"MISS-U | - | 사용자 제보 | {m['url'].strip()} | - | {(m.get('note') or '').strip()[:80]}")
+        miss.append(f"{m['url'].strip()} | {(m.get('note') or '').strip()[:80]}")
         gold.append(f"{last} | {uhash(m['url'])} | {m['url'].strip()} | 수록 | {(m.get('note') or '').strip()[:80]}")
     props = {p['_id']: p for p in doc_rows(d, 'proposals')}
-    dec = []
+    dec, orphan = [], []
     for x in doc_rows(d, 'decisions'):
         p = props.get(x['_id'])
-        if p and p.get('status') == 'pending' and x.get('decision') in ('approve', 'reject'):
+        if not p:
+            if (x.get('at') or '') > since: orphan.append(f"{x['_id']} | {x.get('decision')} | 개선안 문서 없음")
+            continue
+        if p.get('status') == 'pending' and x.get('decision') in ('approve', 'reject'):
             dec.append(f"{x['_id']} | {x['decision']} | {p.get('layer', '')} | {p.get('title', '')[:60]} | {(x.get('note') or '').strip()[:80]}")
     open(f'{W}/signals.md', 'w').write('\n'.join(sig) + ('\n' if sig else ''))
     open(f'{W}/gold.txt', 'w').write('\n'.join(gold) + ('\n' if gold else ''))
     open(f'{W}/decisions.txt', 'w').write('\n'.join(dec) + ('\n' if dec else ''))
+    open(f'{W}/missed.txt', 'w').write('\n'.join(miss) + ('\n' if miss else ''))
     json.dump(cnt, open(f'{W}/fb_count.json', 'w'))
     latest = max([o.get('at') or '' for c in ('feedback', 'missed', 'decisions') for o in doc_rows(d, c)] + [since])
-    print(f"신호 {len(sig)}줄 → {W}/signals.md (MISS-U는 trace로 원인 확인)\n정답 {len(gold)}줄 → {W}/gold.txt\n"
-          f"처리할 결정 {len(dec)}건 → {W}/decisions.txt\n평가 {cnt['평가']}건 중 유용 {cnt['유용']}건\nfb_seen 다음 값: {latest}")
+    print(f"신호 {len(sig)}줄 → {W}/signals.md\n놓침 제보 {len(miss)}건 → {W}/missed.txt (trace MISS-U로 원인 확인)\n정답 {len(gold)}줄 → {W}/gold.txt\n"
+          f"처리할 결정 {len(dec)}건 → {W}/decisions.txt (lessons.md의 제안 번호와 대조)\n평가 {cnt['평가']}건 중 유용 {cnt['유용']}건\nfb_seen 다음 값: {latest}")
     for l in dec: print('  결정: ' + l)
+    for l in orphan: print('  대응 개선안 없는 결정(오류에 적음): ' + l)
 
 
 def cand_bands():
@@ -1138,9 +1150,13 @@ def trace(code, urls):
         bj = json.load(open(f'{W}/briefing.json', encoding='utf-8')); inc = {uhash(i['url']) for i in bj['items']}
         inc |= {uhash(i['origin']['url']) for i in bj['items'] if i.get('origin') and i['origin'].get('url')}
     except (FileNotFoundError, ValueError):
-        inc = set()
+        bj, inc = {}, set()
     meta = json.load(open(f'{W}/cand_meta.json')) if os.path.exists(f'{W}/cand_meta.json') else {}
     grp_inc = {h for k, v in meta.items() if k in inc for h in v.get('grp', [])} | inc
+    ck = json.load(open(f'{W}/cand_keys.json')) if os.path.exists(f'{W}/cand_keys.json') else {}
+    dkeys = {ck[x] for x in bj.get('deferred', []) if x in ck}
+    dfr = {uhash(o['url']) for o in items.values() if o['key'] in dkeys}
+    dfr |= {h for k, v in meta.items() if k in dfr for h in v.get('grp', [])}
     lists = {re.sub(r'^(www\.|m\.)', '', host(m)) for m in re.findall(r'^- [^|]+\| [^|]+\| [^|]+\| (https?://\S+)', open(f'{W}/sources.md').read(), re.M)}
     lines = []
     by_title = {}
@@ -1153,6 +1169,7 @@ def trace(code, urls):
             if o: h = uhash(o['url'])
         if h in grp_inc: c, why = 'C7', '이번 호 수록 묶음'
         elif h in sh: c, why = 'C3', '장부에 있음'
+        elif h in dfr: c, why = 'C8', '이번 호 deferred(다음 회차에 [이월]로 다시 나옴)'
         elif h in bands:
             b, cn = bands[h]; c, why = ('C4' if b <= 1 else 'C5'), f'{cn} 점수 구간 {b}'
         elif o:

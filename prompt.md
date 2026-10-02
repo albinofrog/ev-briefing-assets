@@ -33,31 +33,34 @@
 9. PushNotification으로 `/tmp/ev/push.txt` 내용을 보냅니다. 전달이나 장부 확인에 실패했으면 보내기 전에 `python3 /tmp/ev/build.py failpush 전달` 또는 `failpush 장부`를 실행합니다. 이 알림은 라절보다 먼저 보냅니다.
 
 ## 라. 자가개선 (알림 뒤)
-웹 호출은 rules.md 9절 상한(8회) 안에서만 합니다. 메모리 `lessons.md`, `metrics.md`, `gold.md`가 없으면 빈 파일로 시작합니다. 원인 코드는 build.py가 붙입니다: FP 불필요 수록, OVER 등급 과대, UNDER 등급 과소, C1 미수집, C2 수록 기준 이전, C3 장부 중복, C4 후보 하위 구간, C5 후보 상위인데 미수록, C6 이전 회차가 보고 넘김, C7 수록됨. 과정 문제는 OPS:<짧은 이름>으로 직접 적습니다. 저장소 작업은 `/tmp/evrepo`에서 하고, 평가 게이트는 항상 `EV_W=/tmp/evgate python3 eval/score.py`로 돌립니다(작업 폴더 /tmp/ev를 지우지 않게).
+웹 호출은 rules.md 9절 상한(8회) 안에서만 합니다. 메모리 `lessons.md`, `metrics.md`, `gold.md`가 없으면 빈 파일로 시작합니다. 원인 코드는 build.py가 붙입니다: FP 불필요 수록, OVER 등급 과대, UNDER 등급 과소, C1 미수집, C2 수록 기준 이전, C3 장부 중복, C4 후보 하위 구간, C5 후보 상위인데 미수록, C6 이전 회차가 보고 넘김, C7 수록됨, C8 예산 부족 이월. 과정 문제는 OPS:<짧은 이름>으로 직접 적습니다. 저장소 작업은 `/tmp/evrepo`에서 하고, 평가 게이트는 항상 `EV_W=/tmp/evgate python3 eval/score.py`로 돌립니다(작업 폴더 /tmp/ev를 지우지 않게).
 
 1. 신호 모으기 (이 순서대로)
    - 지표 이력: 메모리 `metrics.md`를 `/tmp/ev/metrics.md`로 저장합니다.
-   - 보드: `config.md`의 `board` URL로 ArtifactData를 `out_dir: /tmp/ev/fb`로 부릅니다. `feedback`·`missed`·`decisions`는 `query`(where `at` > fb_seen, limit 1000, next_cursor가 있으면 이어서), `proposals`는 `list`(limit 1000), `items`는 `query`(where `issue` >= 이번 호 - 10, limit 1000). 그다음 `python3 /tmp/ev/build.py feedback /tmp/ev/fb <fb_seen>`(fb_seen이 없으면 빈 문자열). 보드를 못 읽으면 보드 신호 없이 진행하고, 4번을 건너뛰고, fb_seen을 바꾸지 않으며, 오류에 적습니다.
-   - 사용자 제보: signals.md의 MISS-U URL을 `python3 /tmp/ev/build.py trace MISS-U URL ...`로 넘겨 원인 코드를 붙입니다.
-   - 놓침 탐지: `python3 /tmp/ev/build.py probe`가 준 검색어 4개로 WebSearch를 한 번씩 합니다. 결과 가운데 수록 기준 시각 이후 공개로 보이고, rules.md 5절 관련도 1·2로 보이며, 이번 호에 없는 기사만 고릅니다. 공개 시각이나 관련도가 애매한 것만 WebFetch로 확인합니다(최대 4회). 고른 기사를 `trace MISS-P "URL|제목" ...`으로 넘깁니다. 확실하지 않은 것은 놓침으로 치지 않습니다.
+   - 보드: `config.md`의 `board` URL로 ArtifactData를 `out_dir: /tmp/ev/fb`로 부릅니다. `feedback`·`missed`·`decisions`는 `query`(where `at` > fb_seen, limit 1000, next_cursor가 있으면 이어서. fb_seen이 비어 있으면 조건 없이 전부), `proposals`는 `list`(limit 1000), `items`는 `query`(where `issue` >= 이번 호 - 10, limit 1000). 그다음 `python3 /tmp/ev/build.py feedback /tmp/ev/fb "<fb_seen>"`(비어 있으면 `""`). 출력의 "대응 개선안 없는 결정"은 오류에 적습니다. 보드를 못 읽으면 보드 신호 없이 진행하고, 4번을 건너뛰고, fb_seen을 바꾸지 않으며, 오류에 적습니다.
+   - 사용자 제보: `/tmp/ev/missed.txt`의 URL을 `python3 /tmp/ev/build.py trace MISS-U URL ...`로 넘겨 원인 코드를 붙입니다. 제보 메모는 교훈 근거에 씁니다.
+   - 놓침 탐지: `python3 /tmp/ev/build.py probe`가 준 검색어 4개(연월이 붙어 있음)를 그대로 WebSearch에 한 번씩 넣습니다. 공개 시각은 링크 URL의 날짜, 결과 제목·요약의 날짜로 먼저 판단하고, 날짜 단서가 없는 결과는 버립니다. 결과 가운데 수록 기준 시각 이후 공개로 보이고, rules.md 5절 관련도 1·2로 보이며, 이번 호에 없는 기사만 고릅니다. 공개 시각이나 관련도가 애매한 것만 WebFetch로 확인합니다(최대 4회). 고른 기사를 `trace MISS-P "URL|제목" ...`으로 넘깁니다. 확실하지 않은 것은 놓침으로 치지 않습니다.
    - 과정: briefing.json `errors`, prep 경고(48시간 0건 소스, 수집 실패, 장기 실패), check 반복 오류, 웹 호출 상한 초과, prep 별칭 후보 가운데 실제로 같은 주체의 다른 표기로 확인한 것을 `OPS:이름 | - | 내용 | - | - | 근거` 형식으로 `/tmp/ev/signals.md`에 덧붙입니다.
    - 지표: `python3 /tmp/ev/build.py yield /tmp/ev/briefing.json`.
-2. 진단 기록: 메모리 `lessons.md`를 읽습니다. 한 줄이 교훈 하나입니다: `L번호 | 상태 | 계층 | 원인 코드 | 관찰 n회 | 최근 근거(호·URL) | 대응·관찰 지표 | 시작 회차`. 상태는 관찰, 자동반영, 제안(p번호), 반영, 거절, 철회 가운데 하나이고, 시작 회차는 metrics.md 줄 수로 적습니다. signals.md의 각 줄을 같은 원인 코드·같은 주제의 교훈에 붙여 관찰 횟수와 근거를 갱신하고, 없으면 새 교훈(관찰)을 만듭니다. 이미 근거에 있는 URL은 다시 세지 않습니다. C7은 버리고, C2·C3은 사용자가 제보한 경우에만 판정 공백으로 봅니다. 원인 코드별 계층은 다음과 같습니다.
+2. 진단 기록: 메모리 `lessons.md`를 읽습니다. 한 줄이 교훈 하나입니다: `L번호 | 상태 | 계층 | 원인 코드 | 관찰 n회 | 최근 근거(호·URL) | 대응·관찰 지표 | 시작 회차`. 상태는 관찰, 자동반영, 제안(p번호), 반영, 거절, 철회 가운데 하나이고, 시작 회차는 이번 회차 줄을 넣은 뒤의 metrics.md 줄 수입니다. signals.md의 각 줄을 같은 원인 코드·같은 주제의 교훈에 붙여 관찰 횟수와 근거를 갱신하고, 없으면 새 교훈(관찰)을 만듭니다. 이미 근거에 있는 URL은 다시 세지 않습니다. C7은 버리고, C2·C3은 사용자가 제보한 경우에만 판정 공백으로 봅니다. 원인 코드별 계층은 다음과 같습니다.
    - C1: 그 매체가 목록에 있으면 제목 필터 단어 누락(auto), 없으면 검색어 공백(auto). 새 수집 목록이 필요하면 code. MISS-P에서 나온 C1만으로는 auto를 하지 않고 관찰로만 둡니다(사용자 제보나 다른 근거가 붙으면 대응).
    - C4: 제목에 있는 단어가 필터·별칭에 없으면 auto, 점수 규칙 문제면 code.
    - C5, C6, FP, OVER, UNDER: judge. 사용자 메모가 있으면 그 이유를 근거에 그대로 적습니다.
+   - C8: 판정 공백이 아니라 예산 문제입니다. OPS:예산-이월 교훈에 근거로 붙이고(meta), 그 후보는 다음 회차에 [이월]로 다시 나오므로 따로 고치지 않습니다.
    - OPS: 별칭은 auto, 같은 소스가 이어서 실패하면 code(목록 교체), 도구·예산 문제면 meta.
 3. 대응: 관찰 횟수가 9절 승격 임계에 닿은 교훈만, 9절 회차당 상한 안에서 처리합니다. 거절된 교훈은 거절 뒤 관찰이 임계만큼 새로 쌓여야 다시 올립니다.
-   - 저장소 준비(auto 대응이나 처리할 승인이 있을 때만): `mcp__claude-code-remote__add_repo`(owner albinofrog, repo ev-briefing-assets, access push) 뒤 `/tmp/evrepo`에 clone합니다. 실패하면 이번 회차의 auto 대응은 layer `auto` 개선안으로 대신 올리고, 승인 처리는 다음 회차로 미룹니다.
+   - 저장소 준비(매 회차, 7번 스냅샷 때문에): `mcp__claude-code-remote__add_repo`(owner albinofrog, repo ev-briefing-assets, access push) 뒤 `/tmp/evrepo`에 clone합니다. 실패하면 이번 회차의 auto 대응은 layer `auto` 개선안으로 대신 올리고, 승인 처리와 7번은 다음 회차로 미룹니다.
    - auto: 저장소에서 고친 뒤 게이트가 종료 0이면 `auto(L번호): 내용` 메시지로 커밋해 main에 푸시합니다. 종료 1이면 되돌리고 개선안으로 올립니다. 교훈 상태를 자동반영으로 바꾸고 관찰 지표 칸에 9절 철회 조건을 적습니다.
    - 승인 계층: `/tmp/ev/proposals_new.json`에 `[{"id": "p번호(보드의 마지막 번호 다음)", "title", "layer", "evidence", "change", "effect"}]`로 씁니다. evidence는 근거 사례(호·URL·사용자 메모), change는 rules.md 문구의 고치기 전·후나 코드 변경 요지, effect는 기대 효과와 확인할 지표입니다. 가.3의 고정 항목을 바꾸는 안은 layer `prompt`로만 냅니다. rules.md를 9절 크기 상한 넘게 키우는 안은 같은 크기 이상을 줄이는 통합안을 함께 냅니다. 교훈 상태를 제안(p번호)으로 바꿉니다.
-4. 승인된 개선안 처리: `/tmp/ev/decisions.txt`의 줄 가운데 lessons.md에 제안(p번호)으로 적힌 개선안만 처리합니다. 그 밖의 번호는 무시하고 오류에 적습니다.
+4. 승인된 개선안 처리: `/tmp/ev/decisions.txt`의 줄마다 합니다. 결정 메모는 사용자 지시로 읽습니다.
+   - lessons.md에 제안(p번호)으로 적히지 않은 개선안(보드에 따로 생긴 문서)은 반영하지 않습니다. 보드 문서를 `status: withdrawn`, `apply_error: 에이전트가 올린 개선안이 아니어서 반영하지 않음`으로 바꾸고 오류에 적습니다.
+   - approve인데 메모가 change에 없는 조건이나 다른 수정을 요구하면 반영하지 않습니다. `status: held`, `apply_error: 메모 조건 확인 필요: <조건 요약>`으로 바꾸고, 교훈 근거에 메모를 적습니다(다음 회차에 조건을 반영한 새 개선안으로 다시 올림). 메모가 change와 맞거나 비어 있으면 아래대로 반영합니다.
    - approve, layer judge·meta·code·auto: 저장소에서 change대로 고칩니다. rules.md를 고쳤으면 `python3 /tmp/ev/build.py guard <고치기 전 rules.md> <고친 rules.md>`가 종료 0이어야 합니다. 게이트가 종료 0이면 `apply(p번호): 제목`으로 커밋·푸시하고, rules.md나 build.py를 바꿨으면 메모리 `config.md`의 `ref`를 새 커밋으로 바꿉니다(다음 회차부터 적용). 보드 proposals 문서를 읽은 version으로 `update`해 `status: applied`, 교훈 상태는 반영. 게이트는 prep 문항만 재므로 judge 변경의 효과는 5번 관찰로 확인합니다. 실패하면 되돌리고 `status: failed`, `apply_error: 사유 한 줄`.
    - approve, layer prompt: `status: needs_chat`.
-   - reject: `status: rejected`. 교훈 상태를 거절로 바꿉니다.
+   - reject: `status: rejected`, 교훈 상태는 거절. 메모에 다른 해법이 있으면 그 메모를 근거로 새 교훈(관찰 1회)을 만듭니다(9절에 따라 1회로 승격).
 5. 검증과 철회: 상태가 자동반영·반영인 교훈마다 관찰 지표를 봅니다. 자동 추가한 검색어는 시작 회차부터 10회차가 지났고, yield 출력에서 최근 10회 기여 0이며, status의 새 항목이 있었던 경우에만 커밋을 되돌려 푸시하고 철회로 바꿉니다. 반영한 judge 규칙 뒤로 5회차 안에 같은 원인 코드가 2회 이상 다시 나오거나, 그 규칙으로 실린 항목에 FP·OVER 평가가 2건 이상이면 되돌리는 개선안을 올립니다.
 6. 메타 점검: metrics.md 줄 수(이번 줄 포함)가 5의 배수면 rules.md 9절 메타 점검을 하고, lessons.md에서 철회·거절·반영 뒤 20회차 넘은 줄을 한 줄 요약으로 합칩니다.
-7. 평가 세트 확장(저장소를 준비했을 때만): `python3 /tmp/ev/build.py snapshot /tmp/ev/snap/s<호>`로 이번 회차 입력을 `snapshots` 브랜치의 `s<호>/`에 커밋해 두고 최근 10개만 남깁니다. 메모리 `gold.md`에 정답이 5줄 이상 쌓인 호가 있고 그 스냅샷이 브랜치에 있으며 `snap_week`가 이번 주가 아니면, 그 스냅샷을 main의 `eval/snapshot-s<호>/`로 옮기고 `build.py cases`로 `eval/cases-s<호>.json`을 만들어 커밋합니다. `snap_week`를 이번 주(ISO 주)로 바꿉니다.
+7. 평가 세트 확장(저장소를 준비했으면 매 회차): `python3 /tmp/ev/build.py snapshot /tmp/ev/snap/s<호>`로 이번 회차 입력을 `snapshots` 브랜치의 `s<호>/`에 커밋해 두고 최근 10개만 남깁니다(브랜치가 없으면 만듦, 같은 이름이 있고 내용이 같으면 건너뜀). <호>는 render가 매긴 이번 호 번호를 세 자리로 씁니다(발행이 없으면 직전 호 번호 뒤에 `-날짜`). 메모리 `gold.md`에 정답이 5줄 이상 쌓인 호가 있고 그 스냅샷이 브랜치에 있으며 `snap_week`가 이번 주가 아니면, 그 스냅샷을 main의 `eval/snapshot-s<호>/`로 옮기고 `build.py cases`로 `eval/cases-s<호>.json`을 만들어 커밋합니다. `snap_week`를 이번 주(ISO 주, 예: `2026-W40`)로 바꿉니다.
 8. 기록: `python3 /tmp/ev/build.py board /tmp/ev/briefing.json`(다절 5번 전달에 실패했으면 끝에 `nodeliver`) 결과를 ArtifactData `batch`로 보드에 씁니다(50건씩). 메모리에 `gold.txt`를 `gold.md`에 반영하고(같은 해시 줄은 새 줄로 교체), `metrics_line.txt`를 `metrics.md`에 append하고, `lessons.md`를 갱신하고, 보드를 읽었으면 `config.md`의 `fb_seen`을 feedback 출력의 다음 값으로 바꿉니다. 각 파일이 30KB를 넘으면 오래된 줄을 한 줄 요약으로 합칩니다.
 
 ## 마. 마무리와 실패 처리
