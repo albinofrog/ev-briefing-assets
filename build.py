@@ -1722,7 +1722,7 @@ def promote(path):
         if not m: bad.append(f'{c[0]} 관찰 수 칸 "{c[5][:20]}"'); continue
         lid, state, layer, code, n, ev = c[0], c[1], c[3], c[4], int(m.group()), c[6]
         one = bool(re.match(r'MISS-U|UNDER|OVER', code)) or ev.startswith('거절 메모')
-        selfp = code.startswith('MISS-P')  # 자체 놓침 탐지: 오판을 거르려 임계를 높이되 평가 0이어도 대응
+        selfp = code.startswith(('MISS-P', 'XJ'))  # 자체 놓침 탐지: 오판을 거르려 임계를 높이되 평가 0이어도 대응
         need = thr_fp if code.startswith('FP') else thr_p if selfp else 1 if one else thr
         if state.startswith('제안') and n < need: low.append(f'{lid} {state} 관찰 {n}회 < 임계 {need}')
         if state not in ('관찰', '거절') or n < need: continue
