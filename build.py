@@ -15,13 +15,14 @@
   python3 build.py guard OLD NEW   rules.md 고정 줄(사업 맥락·금지 항목·예산·금지 출처)이 바뀌었으면 종료 1
   python3 build.py feedback DIR SINCE   보드에서 받은 문서(DIR/<컬렉션>/<id>.json) → 신호(signals.md)·놓침 제보(missed.txt)·정답(gold.txt)·결정(decisions.txt)
   python3 build.py trace CODE URL[|제목] ...   URL(못 찾으면 제목)이 수집·후보·장부·이월 어디서 빠졌는지 원인 코드 부여, signals.md에 추가
-  python3 build.py yield FILE      회차 지표 한 줄(/tmp/ev/metrics_line.txt)과 검색어별 최근 10회 기여(/tmp/ev/metrics.md 이력 사용)
+  python3 build.py coverage        검색 주제(추적 검색어 절·권역)별 수집·후보·검토·수록 현황과 주제 공백(/tmp/ev/coverage.json)
+  python3 build.py scorecard FILE  세 목표 점수표·지표 한 줄(/tmp/ev/metrics_line.txt)·출처별 최근 10회 기여(/tmp/ev/metrics.md 이력 사용)
   python3 build.py snapshot DIR    이번 회차 입력을 평가 세트 스냅샷으로 저장(수록 기준 8일 전 이후 항목만)
   python3 build.py cases SNAPDIR GOLD OUT   정답 줄(GOLD)을 그 스냅샷의 판정 문항 파일(OUT)로 변환
 
 작업 폴더 /tmp/ev, 산출물 /mnt/user-data/outputs.
 """
-import sys, os, re, json, html, glob, base64, hashlib, subprocess, unicodedata, datetime as dt
+import sys, os, re, io, json, html, glob, base64, hashlib, contextlib, subprocess, unicodedata, datetime as dt
 
 W = os.environ.get('EV_W', '/tmp/ev')  # 평가 게이트는 EV_W=/tmp/evgate로 실제 작업 폴더와 분리
 FONTS = '/tmp/ev_fonts'
@@ -39,7 +40,7 @@ BLOCKED = ['msn.com', 'naver.com', 'daum.net', 'yahoo.com', 'yahoo.co.jp', 'sina
 BANNED = r'시사|전망|기회|위협|보인다|예상|주목|당사(?!자)'
 WEEK = '월화수목금토일'
 
-ASSETS = [('template.html', f'{W}/template.html'), ('sources.md', f'{W}/sources.md'),
+ASSETS = [('template.html', f'{W}/template.html'), ('sources.md', f'{W}/sources.md'), ('watchlist.md', f'{W}/watchlist.md'),
           ('fonts/archivonarrow.woff2', f'{FONTS}/archivonarrow.woff2'),
           ('fonts/lgsmart.woff2', f'{FONTS}/lgsmart.woff2'), ('serv04_img_01.png', f'{FONTS}/bonce.png'),
           (DATA + 'items.jsonl', f'{W}/items.jsonl'), (DATA + 'status.json', f'{W}/status.json')]
@@ -66,12 +67,14 @@ SCHEMA = r'''
       "first_public": "2026-09-28 17:14",      // 사건 최초 공개 KST. 시각을 모르면 "2026-09-28"(기준일 당일 이후만 수록 가능)
       "body_read": true,
       "relevance": 1,                          // 관련도 1~3
-      "trust_fail": null,                      // 관련도 1·2인데 참고로 둘 때 사유: "self_promo" | "time_unverified" | "no_action"(의견·발언만 있음) | "existing_plan"(기존 사업·계획 소개에 새 목표치만 더함)
+      "relevance_basis": "SOH 산출 주기 개발 언급",  // 관련도 1·2만: 판정 근거가 된 원문 내용(주제어 포함, 60자 이내, 원문 문장 복사 금지). 3이면 생략
+      "source_tier": 2,                        // 출처 등급 1~3(판정 규칙 3절). url 매체 기준, 원출처는 origin
+      "trust_fail": null,                      // 관련도 1·2인데 참고로 둘 때 사유: "self_promo" | "time_unverified" | "no_action"(의견·발언만 있음) | "existing_plan"(기존 사업·계획 소개에 새 목표치만 더함) | "source_unverified"(3등급 매체이고 원출처 미확인)
       "origin": {"url": "https://…", "outlet": "현대자동차그룹", "title": "…", "date": "2026-09-28"},  // 없으면 null
       "event_key": "현대자동차그룹 / 개발 / -"   // 주체 / 행위 명사 1개 / 대표 수치("|" 금지)
     }
   ],
-  "calls": {"본문": 22, "원출처·원매체": 8, "실패목록": 3},   // 웹 호출(WebFetch·WebSearch) 수
+  "calls": {"본문": 22, "보조": 11},          // 웹 호출 수(실패 포함). 본문: 후보 기사 본문 WebFetch(다른 URL 재시도 포함), 보조: 그 밖 브리핑 단계의 모든 WebSearch·WebFetch
   "dropped": ["제목 앞 20자 | 사유", "…"],   // 주요 탈락 5건 이내
   "deferred": ["c12", "c40-1"],              // 예산 때문에 본문을 열지 못해 다음 회차로 넘길 후보 번호(↳ 줄은 c40-1 형식, 30개 이내)
   "errors": ["도구 오류 원문 요약"]
@@ -276,7 +279,14 @@ def src_info():
         b = t[t.index('## B.'):t.index('## C.')]
         c = t[t.index('## C.'):t.index('## D.')]
         d = t[t.index('## D.'):t.index('## E.')] if '## E.' in t else t[t.index('## D.'):]
-        f = t[t.index('## F.'):] if '## F.' in t else ''
+        f = t[t.index('## F.'):t.index('## G.')] if '## G.' in t else (t[t.index('## F.'):] if '## F.' in t else '')
+        g = t[t.index('## G.'):t.index('## H.')] if '## H.' in t else (t[t.index('## G.'):] if '## G.' in t else '')
+        hsec = t[t.index('## H.'):] if '## H.' in t else ''
+        t2x = [x.strip() for ln in hsec.splitlines()[2:] if ln.strip() and not ln.startswith('#') for x in ln.split(',') if x.strip()]
+        prim = [x.strip() for ln in g.splitlines()[2:] if ln.strip() and not ln.startswith('#') for x in ln.split(',') if x.strip()]
+        a_sec = t[:t.index('## B.')]
+        lst = sorted({re.sub(r'^(www\.|m\.|rss\.|feeds\.cms\.)', '', host(u)) for nm, u in re.findall(r'^- ([^|]+)\|[^|]+\|[^|]+\| (https?://\S+)', a_sec, re.M)
+                      if '발견 전용' not in nm})
         rel = []  # (표기, 관련도) 대소문자 구분
         for ln in f.splitlines():
             m = re.match(r'- (.+?)\s*\|\s*R([12])\s*$', ln)
@@ -298,7 +308,7 @@ def src_info():
                         ents.append((re.compile(r'(?<![가-힣])' + nm + r'(?![적문산])'), names[0]))
                     else:
                         ents.append((nm.lower(), names[0]))
-        _SRC = {'ev': ev, 'tier1': tier1, 'ents': ents, 'rel': rel}
+        _SRC = {'ev': ev, 'tier1': tier1, 'ents': ents, 'rel': rel, 'primary': prim, 'lists': lst + t2x}
     return _SRC
 
 
@@ -485,6 +495,14 @@ EXCLUDED = ['tistory.com', 'blog.naver.com', 'brunch.co.kr', 'medium.com', 'subs
             'twitter.com', 'facebook.com', 'linkedin.com', 'youtube.com', 'reddit.com', 'weibo.com', 'zhihu.com',
             'toutiao.com', 'baijiahao.baidu.com', 'wikipedia.org']
 GENERIC_ACT = {'발표', '공개', '밝힘', '언급', '보도', '-'}
+
+
+def auto_tier(u):
+    """도메인으로 정해지는 출처 등급. 1: 1등급 매체·1차 출처(C·G절), 2: 수집 목록 매체·확인 2등급 매체(A·H절), 0: 목록 밖."""
+    s = src_info(); h = host(u)
+    if dom_in(h, s['tier1']) or any(h == x or h.endswith('.' + x) for x in s['primary']): return 1
+    if dom_in(h, s['lists']): return 2
+    return 0
 END_RE = re.compile(r'([했됐었았였왔났냈겠렸쳤졌섰갔봤켰혔뒀줬웠한된인있없는이]다|니다|[해어아]요|예요)[.!?]?["”’]?$')
 
 
@@ -621,7 +639,11 @@ def check(path, quiet=False):
         if o is not None and not (isinstance(o, dict) and isinstance(o.get('url'), str) and o['url'].startswith('http')):
             bad.append('origin(url 필수, 없으면 null)')
         if 'relevance' in it and it['relevance'] not in (1, 2, 3): bad.append('relevance(1~3)')
-        if it.get('trust_fail') not in (None, 'self_promo', 'time_unverified', 'no_action', 'existing_plan'): bad.append('trust_fail')
+        if it.get('trust_fail') not in (None, 'self_promo', 'time_unverified', 'no_action', 'existing_plan', 'source_unverified'): bad.append('trust_fail')
+        if it.get('source_tier') not in (1, 2, 3): bad.append('source_tier(1~3)')
+        rb = it.get('relevance_basis')
+        if it.get('relevance') in (1, 2) and it.get('body_read') and not (isinstance(rb, str) and 0 < len(rb.strip()) <= 60):
+            bad.append('relevance_basis(관련도 1·2 본문 확인 기사는 판정 근거 60자 이내)')
         if miss or bad:
             E.append(f'{L}: 필드 누락 {miss} / 형식 오류 {bad}'); continue
         if tier not in ('core', 'ref'): E.append(f'{L}: tier는 core|ref')
@@ -670,7 +692,17 @@ def check(path, quiet=False):
         nu = nurl(it['url'])
         if nu in urls: E.append(f'{L}: 같은 URL 중복 수록(항목 {urls[nu]})')
         urls[nu] = i
+        at = auto_tier(it['url'])
+        own = bool(o and nurl(o['url']) == nurl(it['url']))  # 발표 주체 본인 페이지
+        if at and it['source_tier'] != at and not (own and it['source_tier'] == 1):
+            E.append(f'{L}: {host(it["url"])}는 sources.md 기준 {at}등급 → source_tier {at}')
+        elif not at and own:
+            Wn.append(f'{L}: {host(it["url"])}를 발표 주체 본인 페이지로 봄(origin=url) → 그 주체의 공식 사이트·보도자료 페이지가 맞는지 확인')
+        elif not at and it['source_tier'] == 1 and not own:
+            E.append(f'{L}: {host(it["url"])}는 1등급 목록·1차 출처 도메인 밖 → 발표 주체 본인 페이지면 origin에 같은 URL, 아니면 2 또는 3')
         if tier == 'core':
+            if not at and not o:
+                E.append(f'{L}: 핵심은 sources.md 1·2등급 매체이거나 원출처 확인 필요({host(it["url"])}는 목록 밖) → origin을 찾거나 ref(trust_fail source_unverified)')
             if not it['body_read']: E.append(f'{L}: 핵심은 본문 확인 필수 → ref')
             if it['relevance'] == 3: E.append(f'{L}: 관련도 3은 참고 → ref')
             if it.get('trust_fail'): E.append(f'{L}: trust_fail({it["trust_fail"]})이면 참고 → ref')
@@ -682,6 +714,8 @@ def check(path, quiet=False):
         else:
             if not isinstance(summ, str): E.append(f'{L}: 참고 summary는 문자열 한 줄')
             if not it['body_read'] and summ != '본문 미확인': E.append(f'{L}: 본문 미확인이면 summary는 "본문 미확인"')
+            if it.get('trust_fail') == 'source_unverified' and (at or o):
+                E.append(f'{L}: source_unverified는 목록 밖 매체이고 원출처가 없을 때만')
             if it['body_read'] and it['relevance'] in (1, 2) and not it.get('trust_fail'):
                 E.append(f'{L}: 본문을 확인한 관련도 {it["relevance"]} 기사는 핵심 → core(참고로 둘 사유가 있으면 trust_fail)')
         if len(it['headline']) > 60: Wn.append(f'{L}: 헤드라인 {len(it["headline"])}자(60자 이내 권장)')
@@ -749,8 +783,12 @@ def check(path, quiet=False):
         full = sum(1 for c in picked if c[1] == a) >= 2
         worse = [c for c in picked if c[2] > r and (not full or c[1] == a)]
         if worse: E.append(f'{L}: 관련도 {r}인데 오늘의 핵심에서 빠짐(관련도 {worse[-1][2]} 항목 대신 넣음)')
-    tot = sum(v for v in d.get('calls', {}).values() if isinstance(v, int))
+    calls = d.get('calls', {})
+    tot = sum(v for v in calls.values() if isinstance(v, int))
+    if set(calls) - {'본문', '보조'}: E.append('calls 키는 "본문"·"보조"만')
     if tot > 40: Wn.append(f'웹 호출 합계 {tot}회(상한 40)')
+    if calls.get('본문', 0) > 25: Wn.append(f"본문 호출 {calls['본문']}회(상한 25)")
+    if calls.get('보조', 0) > 15: Wn.append(f"보조 호출 {calls['보조']}회(상한 15)")
     if not quiet or E or Wn:
         print(f'검사: 항목 {len(items)}(핵심 {ncore}) | 오류 {len(E)} | 확인 {len(Wn)}')
         for m in E: print('오류', m)
@@ -806,7 +844,8 @@ def render(path):
         if pdf_ok: files.insert(0, pdf_path)
     if fails:
         push = '[실패] ' + ','.join(sorted(set(f.split(':')[0] for f in fails))) + ' ' + push
-    push = push[:200]
+    bu = board_url()
+    push = push[:200 - (len(bu) + 6 if bu else 0)] + (f' | 평가 {bu}' if bu else '')
     calls = d.get('calls', {})
     total = sum(v for v in calls.values() if isinstance(v, int))
     head = f"## {'제' + nnn + '호' if items else '발행 없음'} | 시작 {st['start']} | 기준 {c:%m-%d %H:%M}~{s:%m-%d %H:%M} KST | 핵심 {len(core)}·참고 {len(refs)} | 파일 {'PDF·HTML' if len(files) == 2 else ('HTML' if files else '없음')}"
@@ -831,6 +870,13 @@ def render(path):
     print('== run_log 블록 ==\n' + block)
     print('== 메모리 state.md(전달 후 덮어씀) ==\n' + mem)
     if fails: print('== 실패 ==\n' + '\n'.join(fails))
+
+
+def board_url():
+    """피드백 보드 주소(/tmp/ev/board_url.txt, 준비 단계에서 config.md의 board 값을 저장). 없으면 빈 문자열."""
+    p = f'{W}/board_url.txt'
+    u = open(p, encoding='utf-8').read().strip() if os.path.exists(p) else ''
+    return u if re.match(r'https://claude\.ai/\S+$', u) else ''
 
 
 def build_html(d, s, c, nnn, date, fails):
@@ -862,7 +908,8 @@ def build_html(d, s, c, nnn, date, fails):
     B.append('<header class="mast">\n  <div>\n' + (f'    <img class="logo" src="{uri}" alt="B.once">\n' if uri else '') +
              '    <h1>EV 시장·정책 브리핑</h1><div class="sub">배터리 데이터 신사업을 위한 국내외 시장·정책 일간 동향</div></div>\n'
              f'  <dl><dt>이슈</dt><dd>제{nnn}호</dd><dt>발행일</dt><dd>{date} ({WEEK[s.weekday()]})</dd><dt>작성</dt><dd>{s:%H:%M} KST</dd>'
-             f'<dt>조사 창</dt><dd>{c:%m-%d %H:%M} ~ {s:%m-%d %H:%M} KST</dd></dl>\n</header>')
+             f'<dt>조사 창</dt><dd>{c:%m-%d %H:%M} ~ {s:%m-%d %H:%M} KST</dd>'
+             + (f'<dt>평가</dt><dd><a href="{esc(board_url())}">피드백 보드</a></dd>' if board_url() else '') + '</dl>\n</header>')
     core = [i for i in items if i['tier'] == 'core']
     tops = sorted([i for i in core if i.get('top')], key=lambda x: x['top'])
     for i in tops: i['_id'] = f"k{i['top']}"
@@ -1070,7 +1117,7 @@ def board(path, delivered=True):
             'outlet': i.get('outlet', ''), 'published': i.get('published_kst', ''), 'relevance': i.get('relevance'),
             'trust_fail': i.get('trust_fail') or '', 'event_key': i.get('event_key', ''), 'key': uhash(i['url']),
             'date': kst(st['start']).strftime('%Y-%m-%d')}})
-    if os.path.exists(f'{W}/metrics.json'):  # yield가 만든 이번 회차 지표
+    if os.path.exists(f'{W}/metrics.json'):  # scorecard가 만든 이번 회차 지표
         m = json.load(open(f'{W}/metrics.json'))
         writes.append({'op': 'set', 'collection': 'metrics', 'doc_id': 'm' + re.sub(r'[^0-9]', '', st['start'])[:12], 'data': m})
     if os.path.exists(f'{W}/proposals_new.json'):  # 이번 회차 새 개선안 [{id,title,layer,evidence,change,effect}]
@@ -1185,9 +1232,116 @@ def trace(code, urls):
     print('\n'.join(lines))
 
 
-def yield_cmd(path):
+def watch_sections():
+    """watchlist.md → [(절 제목, [검색어])]."""
+    out, cur = [], None
+    for ln in open(f'{W}/watchlist.md', encoding='utf-8'):
+        if ln.startswith('## '): cur = (ln[3:].strip(), []); out.append(cur)
+        elif cur and ln.startswith('- '): cur[1].append(ln[2:].split('|')[0].strip())
+    return out
+
+
+def read_decisions():
+    """decisions.tsv: 후보번호<TAB>본문열람(y/n/실패)<TAB>결정<TAB>사유."""
+    dec = {}
+    if os.path.exists(f'{W}/decisions.tsv'):
+        for ln in open(f'{W}/decisions.tsv', encoding='utf-8'):
+            p = ln.rstrip('\n').split('\t')
+            if len(p) >= 3 and re.fullmatch(r'[cx]\d+(-\d+)?', p[0].strip()): dec[p[0].strip()] = (p[1].strip(), p[2].strip(), p[3].strip() if len(p) > 3 else '')
+    return dec
+
+
+def cand_groups():
+    """candidates.md → [{'id','band','urls'}]."""
+    gs, band = [], None
+    for ln in open(f'{W}/candidates.md', encoding='utf-8'):
+        if ln.startswith('## '): band = 3 if '3 이상' in ln else 2 if '점수 2' in ln else 1
+        m = re.match(r'(c\d+) \|', ln)
+        if m: gs.append({'id': m.group(1), 'band': band, 'urls': []})
+        if gs and (m or ln.startswith('   ↳')): gs[-1]['urls'] += [u.rstrip(')') for u in re.findall(r'https?://\S+', ln)]
+    return gs
+
+
+def coverage():
+    """검색 주제(추적 검색어 절·권역)별 수집·후보·검토·수록 현황과 주제 공백."""
+    status = json.load(open(f'{W}/status.json'))
+    items = {}
+    for ln in open(f'{W}/items.jsonl', encoding='utf-8'):
+        if ln.strip():
+            o = json.loads(ln)
+            if not o.get('stub'): items[uhash(o['url'])] = o
+    dec = read_decisions()
+    try:
+        bj = json.load(open(f'{W}/briefing.json', encoding='utf-8')); inc = {uhash(i['url']) for i in bj['items']}
+    except (FileNotFoundError, ValueError):
+        bj, inc = {}, set()
+    dfr = set(bj.get('deferred', []))
+    def done(cid):  # 검토 완료: 결정과 사유가 있고, 이월은 briefing의 deferred에 있을 때만
+        x = dec.get(cid)
+        return bool(x and x[2] and (x[1] in ('핵심', '참고', '제외') or (x[1] == '이월' and (cid in dfr or not bj))))  # briefing 작성 전에는 이월 줄을 잠정 인정
+    gs = cand_groups()
+    titles = {g['id']: ' '.join(items[uhash(u)]['title'] for u in g['urls'] if uhash(u) in items).lower() for g in gs}
+    t_src = open(f'{W}/sources.md', encoding='utf-8').read()
+    bsec = t_src[t_src.index('## B.'):t_src.index('## C.')]
+    generic = {w.strip().lower() for ln in bsec.splitlines()[2:] for w in ln.split(',') if w.strip()}
+    generic |= {'battery', 'batteries', 'data', 'vehicle', 'vehicles', 'used', 'electric', 'health', 'car', 'cars', 'auto', 'new', 'check',
+                'value', 'values', 'prices', 'price', '전기차', '배터리', '자동차', '데이터', '차량', '중고', 'ev', 'evs', '电池', 'バッテリー', 'batterie'}
+    for g in gs:
+        g['srcs'] = {items[uhash(u)]['src'] for u in g['urls'] if uhash(u) in items}
+        g['regions'] = {items[uhash(u)].get('region') or region_of(items[uhash(u)]) for u in g['urls'] if uhash(u) in items}
+        g['inc'] = any(uhash(u) in inc for u in g['urls'])
+    secs = watch_sections()
+    rows, gaps = [], []
+    for name, qs in secs:
+        w = [status.get('watch', {}).get(q, {}) for q in qs]
+        kws = {k.lower() for q in qs for k in re.findall(r'"([^"]+)"', q)} | {k.lower() for q in qs for k in re.sub(r'"[^"]*"|\bOR\b', ' ', q).split() if len(k) >= 4 or re.search('[^\x00-\x7f]', k) and len(k) >= 2}
+        kws = {k for k in kws if k not in generic}  # 주제 고유어만(일반 EV 단어로는 주제를 정하지 않음)
+        sel = [g for g in gs if any(s in ('watch:' + q for q in qs) for s in g['srcs']) or any(k in titles.get(g['id'], '') for k in kws)]
+        hi = [g for g in sel if g['band'] >= 2]
+        r = {'topic': name, 'queries': len(qs), 'failed': sum(1 for x in w if x and not x.get('ok')), 'zero': sum(1 for x in w if x.get('ok') and not x.get('fetched')),
+             'cand': len(sel), 'cand_hi': len(hi), 'reviewed_hi': sum(1 for g in hi if done(g['id'])),
+             'opened': sum(1 for g in sel if dec.get(g['id'], ('',))[0] == 'y'), 'included': sum(1 for g in sel if g['inc'])}
+        rows.append(r)
+        if not hi:
+            filled = any(k.startswith('x') and f'[보강:{name}]' in v[2] for k, v in dec.items())
+            gaps.append({'topic': name, 'hints': qs[:2], 'filled': filled})
+    reg = []
+    for rg in REGIONS:
+        sel = [g for g in gs if rg in g['regions']]
+        reg.append({'region': rg, 'cand': len(sel), 'cand_hi': sum(1 for g in sel if g['band'] >= 2), 'included': sum(1 for g in sel if g['inc'])})
+    hi_all = [g for g in gs if g['band'] >= 2]
+    lfail = [k for k, v in status['lists'].items() if not v.get('ok')]
+    wfail = [k for k, v in status.get('watch', {}).items() if not v.get('ok')]
+    opened_y = sum(1 for k, v in dec.items() if v[0] == 'y')
+    cov = {'topics': rows, 'regions': reg, 'gaps': gaps, 'cand_hi': len(hi_all), 'reviewed_hi': sum(1 for g in hi_all if done(g['id'])),
+           'unreviewed_hi': [g['id'] for g in hi_all if not done(g['id'])], 'list_fail': lfail, 'watch_fail': wfail, 'opened_y': opened_y}
+    json.dump(cov, open(f'{W}/coverage.json', 'w'), ensure_ascii=False)
+    print('주제 | 검색어(실패·0건) | 후보(점수2+) | 검토 | 본문 | 수록')
+    for r in rows:
+        print(f"  {r['topic']} | {r['queries']}({r['failed']}·{r['zero']}) | {r['cand']}({r['cand_hi']}) | {r['reviewed_hi']}/{r['cand_hi']} | {r['opened']} | {r['included']}")
+    print('권역 | 후보(점수2+) | 수록: ' + ', '.join(f"{x['region']} {x['cand']}({x['cand_hi']}) {x['included']}" for x in reg))
+    print(f"점수 2 이상 후보 검토 {cov['reviewed_hi']}/{cov['cand_hi']}" + (f" · 미검토 {', '.join(cov['unreviewed_hi'][:15])}" if cov['unreviewed_hi'] and dec else ''))
+    if lfail or wfail: print(f"수집 실패: 목록 {len(lfail)}·검색어 {len(wfail)}")
+    for gp in gaps:
+        print(f"주제 공백: {gp['topic']} (점수 2 이상 후보 0) " + ('→ 보강함' if gp['filled'] else f"→ 보강 검색 예시: {' / '.join(gp['hints'])} (decisions.tsv 보강 줄 사유에 [보강:{gp['topic']}])"))
+    nfill = sum(1 for k, v in dec.items() if k.startswith('x') and '[보강:' in v[2])
+    na = (bj.get('calls') or {}).get('보조')
+    if isinstance(na, int) and nfill > na: print(f'확인: 보강 줄 {nfill}개가 calls.보조 {na}회보다 많음 → 검색하지 않은 주제를 보강함으로 적지 않았는지 확인')
+    nb = (bj.get('calls') or {}).get('본문')
+    if isinstance(nb, int) and opened_y > nb: print(f'확인: 본문열람 y {opened_y}줄이 calls.본문 {nb}회보다 많음 → 열지 않은 후보를 y로 적지 않았는지 확인')
+
+
+def targets():
+    t = open(f'{W}/rules.md', encoding='utf-8').read()
+    m = re.search(r'목표값:\s*(.+)', t)
+    return {k.strip(): float(v) for k, v in re.findall(r'([^=,]+)=\s*([\d.]+)', m.group(1))} if m else {}
+
+
+def scorecard(path):
+    """세 목표(검색 충분성·출처 신뢰성·문서 관련성) 점수표와 지표 한 줄, 출처별 수록 기여."""
     st = now_state()
     d = json.load(open(path, encoding='utf-8'))
+    its = d['items']
     meta = json.load(open(f'{W}/cand_meta.json')) if os.path.exists(f'{W}/cand_meta.json') else {}
     src = {}
     for ln in open(f'{W}/items.jsonl', encoding='utf-8'):
@@ -1195,21 +1349,47 @@ def yield_cmd(path):
             o = json.loads(ln)
             if not o.get('stub'): src[uhash(o['url'])] = o['src']
     contrib = {}
-    for i in d['items']:
+    for i in its:
         hs = set(meta.get(uhash(i['url']), {}).get('grp', [])) | {uhash(i['url'])}
         for s in {src[h] for h in hs if h in src}: contrib[s] = contrib.get(s, 0) + 1
+    with contextlib.redirect_stdout(io.StringIO()): coverage()  # 늘 최신 판정·briefing 기준으로 다시 계산
+    cov = json.load(open(f'{W}/coverage.json'))
     sig = open(f'{W}/signals.md').read().splitlines() if os.path.exists(f'{W}/signals.md') else []
-    miss = sum(1 for l in sig if re.match(r'MISS-U:C[1-6]|MISS-P:C[12456]', l))
+    miss = sum(1 for l in sig if re.match(r'MISS-[UP]:C[1456]', l))
+    cnt = lambda c: sum(1 for l in sig if l.startswith(c + ' '))
+    own = lambda i: bool(i.get('origin') and nurl(i['origin']['url']) == nurl(i['url']))
+    tiers = [auto_tier(i['url']) or (1 if own(i) else 0) for i in its]
+    ver = lambda i: bool(i.get('origin')) and (auto_tier(i['url']) or not own(i))  # 목록 밖 매체의 본인 페이지 주장은 원출처 확인으로 세지 않음
+    r12 = [i for i in its if i.get('relevance') in (1, 2)]
     fb = json.load(open(f'{W}/fb_count.json')) if os.path.exists(f'{W}/fb_count.json') else {'평가': 0, '유용': 0}
-    core = sum(1 for i in d['items'] if i['tier'] == 'core')
+    core = [i for i in its if i['tier'] == 'core']
+    pct = lambda a, b: round(100 * a / b) if b else None
     calls = sum(v for v in d.get('calls', {}).values() if isinstance(v, int))
-    issue = st['issue'] + (1 if d['items'] else 0)
-    line = (f"{kst(st['start']):%Y-%m-%d} | {issue} | 핵심 {core} 참고 {len(d['items']) - core} | 웹 {calls} | 놓침 {miss} | "
-            f"평가 {fb['평가']} 유용 {fb['유용']} | 기여 " + (';'.join(f'{k}:{v}' for k, v in sorted(contrib.items())) or '-'))
+    sc = {
+        '검토율': pct(cov['reviewed_hi'], cov['cand_hi']), '주제공백': sum(1 for g in cov['gaps'] if not g['filled']),
+        '수집실패': len(cov['list_fail']) + len(cov['watch_fail']), '이월': len(d.get('deferred', [])), '놓침': miss,
+        '출처12비율': pct(sum(1 for x in tiers if x in (1, 2)), len(its)), '자체판정2': sum(1 for x, i in zip(tiers, its) if not x and i.get('source_tier') == 2),
+        '자체판정1': sum(1 for i in its if not auto_tier(i['url']) and own(i)),
+        '핵심원출처': pct(sum(1 for i in core if ver(i)), len(core)), '관련12본문': pct(sum(1 for i in r12 if i.get('body_read')), len(r12)),
+        '관련12건수': len(r12), '유용비율': pct(fb['유용'], fb['평가']), 'FP': cnt('FP'), 'OVER': cnt('OVER'), 'UNDER': cnt('UNDER')}
+    tg = targets()
+    low = {'주제공백', '수집실패', '이월', '놓침', 'FP', 'OVER', 'UNDER', '자체판정2', '자체판정1'}
+    miss_t = [k for k, v in tg.items() if sc.get(k) is not None and (sc[k] > v if k in low else sc[k] < v)]
+    axis = {'검색 충분성': ['검토율', '주제공백', '수집실패', '이월', '놓침'], '출처 신뢰성': ['출처12비율', '자체판정2', '자체판정1', '핵심원출처', '관련12본문'],
+            '문서 관련성': ['관련12건수', '유용비율', 'FP', 'OVER', 'UNDER']}
+    issue = st['issue'] + (1 if its else 0)
+    f = lambda k: '-' if sc[k] is None else (f'{sc[k]}%' if k in ('검토율', '출처12비율', '핵심원출처', '관련12본문', '유용비율') else str(sc[k]))
+    line = (f"{kst(st['start']):%Y-%m-%d} | {issue} | 핵심 {len(core)} 참고 {len(its) - len(core)} | 웹 {calls} | 평가 {fb['평가']} 유용 {fb['유용']} | "
+            + ' | '.join(a + ' ' + ' '.join(f'{k} {f(k)}' for k in ks) for a, ks in axis.items())
+            + f" | 미달 {','.join(miss_t) or '-'} | 기여 " + (';'.join(f'{k}:{v}' for k, v in sorted(contrib.items())) or '-'))
     open(f'{W}/metrics_line.txt', 'w').write(line + '\n')
-    json.dump({'issue': issue, 'date': f"{kst(st['start']):%Y-%m-%d}", 'core': core, 'ref': len(d['items']) - core, 'calls': calls,
-               'missed': miss, 'rated': fb['평가'], 'useful': fb['유용'], 'contrib': contrib}, open(f'{W}/metrics.json', 'w'), ensure_ascii=False)
-    print('이번 회차: ' + line)
+    json.dump({'issue': issue, 'date': f"{kst(st['start']):%Y-%m-%d}", 'core': len(core), 'ref': len(its) - len(core), 'calls': calls,
+               'missed': miss, 'rated': fb['평가'], 'useful': fb['유용'], 'score': sc, 'below': miss_t, 'contrib': contrib},
+              open(f'{W}/metrics.json', 'w'), ensure_ascii=False)
+    print('점수표:')
+    for a, ks in axis.items():
+        print(f"  {a}: " + ', '.join(f"{k} {f(k)}" + (f"(목표 {tg[k]:g})" if k in tg else '') + (' 미달' if k in miss_t else '') for k in ks))
+    print('이번 회차 지표 줄: ' + line)
     hist = [l for l in (open(f'{W}/metrics.md').read().splitlines() if os.path.exists(f'{W}/metrics.md') else [])
             if re.match(r'\d{4}-\d\d-\d\d \| ', l)][-9:] + [line]
     tot = {}
@@ -1218,13 +1398,11 @@ def yield_cmd(path):
             mm = re.match(r'(.+):(\d+)$', part.strip())
             if mm: tot[mm.group(1)] = tot.get(mm.group(1), 0) + int(mm.group(2))
     status = json.load(open(f'{W}/status.json'))
-    print(f'최근 {len(hist)}회 수록 기여(0이면 교체 후보, 자동 추가분만 자동 철회):')
+    print(f'최근 {len(hist)}회 수록 기여 0(교체 후보, 자동 추가분만 자동 철회):')
     for q, v in status.get('watch', {}).items():
-        c = tot.get('watch:' + q, 0)
-        if c == 0: print(f"  0 | watch:{q} | 이번 새 항목 {v.get('new', 0)}")
+        if tot.get('watch:' + q, 0) == 0: print(f"  watch:{q} | 이번 새 항목 {v.get('new', 0)}")
     for k, v in status['lists'].items():
-        if tot.get(k, 0) == 0: print(f"  0 | {k} | 이번 새 항목 {v.get('new', 0)}")
-    print('  기여 있음: ' + ', '.join(f'{k} {v}' for k, v in sorted(tot.items(), key=lambda x: -x[1])))
+        if tot.get(k, 0) == 0: print(f"  {k} | 이번 새 항목 {v.get('new', 0)}")
 
 
 def snapshot(dst):
@@ -1287,7 +1465,8 @@ if __name__ == '__main__':
     elif a[0] == 'guard': guard(a[1], a[2])
     elif a[0] == 'feedback': feedback(a[1], a[2] if len(a) > 2 else '')
     elif a[0] == 'trace': trace(a[1], a[2:])
-    elif a[0] == 'yield': yield_cmd(a[1])
+    elif a[0] in ('scorecard', 'yield'): scorecard(a[1])
+    elif a[0] == 'coverage': coverage()
     elif a[0] == 'snapshot': snapshot(a[1])
     elif a[0] == 'cases': cases(a[1], a[2], a[3])
     else: sys.exit(__doc__)

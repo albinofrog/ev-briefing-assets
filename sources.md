@@ -47,7 +47,7 @@ EV, EVs, electric vehicle, electric vehicles, electric car, battery, batteries, 
 Elektroauto, Elektroautos, E-Auto, E-Autos, Batterie, Akku, Lithium, Gebrauchtwagen, Restwert, Leasing, Kfz-Versicherung, Zoll, Zölle, Förderung, Flottengrenzwert, Datenzugang, Fahrzeugdaten, Data Act, Batteriezustand, Restwerte
 
 ## C. 1등급 도메인
-같은 사건을 여러 매체가 보도했을 때 실을 URL을 고르는 데만 씁니다.
+출처 등급은 기사 URL의 매체로 정합니다. 1등급은 이 절의 매체와 G절 1차 출처, 2등급은 A절 수집 목록 매체와 H절 매체이며 build.py check가 그대로 적용합니다. 목록 밖 매체는 에이전트가 2(발행사·게재일을 밝힌 언론사) 또는 3(가이드·비교 사이트, 발행사·게재일 불분명, 짧은 재가공)으로 적되, 핵심이 되려면 원출처 확인이 필요합니다. 발표 주체 본인의 페이지는 origin에 같은 URL을 두고 1로 적습니다.
 
 - 글로벌: reuters.com, bloomberg.com, apnews.com, ft.com, wsj.com, asia.nikkei.com
 - 한국: yna.co.kr, news1.kr, hankyung.com, mk.co.kr, sedaily.com, edaily.co.kr, etnews.com, thelec.kr, electimes.com
@@ -128,3 +128,12 @@ Elektroauto, Elektroautos, E-Auto, E-Autos, Batterie, Akku, Lithium, Gebrauchtwa
 - Carvana = CarMax | R2
 - 瓜子二手车 = 优信 | R2
 - 삼성화재 = 현대해상 = DB손해보험 = DB손보 = KB손해보험 | R2
+
+## G. 1차 출처 도메인
+발표 주체 자신이 낸 자료(정부·규제기관 발표, 공시, 공식 보도자료 배포)입니다. 출처 등급 1로 봅니다. 기업 자체 사이트는 목록에 없어도 발표 주체 본인의 페이지면 1차 출처입니다. 형식: 쉼표로 구분한 도메인(그 하위 도메인 포함).
+
+gov, gov.uk, go.kr, gov.cn, go.jp, europa.eu, bund.de, gouv.fr, korea.kr, sec.gov, dart.fss.or.kr, cninfo.com.cn, edinet-fsa.go.jp, globenewswire.com, prnewswire.com, businesswire.com, newswire.co.kr
+
+## H. 확인 2등급 매체
+목록 밖이지만 발행사·편집 책임이 확인돼 2등급으로 보는 매체입니다(승인된 개선안으로만 추가). 형식: 쉼표로 구분한 도메인.
+
