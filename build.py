@@ -1620,8 +1620,6 @@ def patch_cmd(ref, keep_only=False, board_dir=None):
         if pid in known: out.append(f'SKIP {pid} 이미 적용 중'); continue
         bad = [why for e in ed if e.get('file') == 'prompt' for r0, why in [prompt_guard(e.get('old') or '', e.get('new') or '', ptxt)] if r0 == 'fail']
         if bad: out.append(f'FAIL {pid} {bad[0]}'); continue
-        if {e.get('file') for e in ed} & {'rules.md', 'improve.md'}:  # 판정 문항 회귀가 없어 사용자 확인(채팅)으로 넘김
-            out.append(f'CHAT {pid} 판정 규칙·자가개선 절차 변경: 회귀 문항이 없어 채팅 반영'); continue
         files = {e.get('file') for e in ed} - {'prompt'}
         pick = lambda f: [l for l in (open(f'{W}/{f}', encoding='utf-8').read().splitlines() if os.path.exists(f'{W}/{f}') else [])
                           if any(re.search(x, l) for x in LOCK)]
@@ -1629,6 +1627,9 @@ def patch_cmd(ref, keep_only=False, board_dir=None):
         r, why, back, touched = apply_group(ed, strict=True)
         if r != 'fail':
             if any(pick(f) != lock0[f] for f in files): why = '고정 줄 변경'
+            elif touched & {'rules.md', 'improve.md'}:  # 문구·고정 줄 검사는 통과. 판정 회귀가 없어 사용자 확인(채팅, eval/replay.md)으로 넘김
+                for p, t in back.items(): open(p, 'w', encoding='utf-8').write(t)
+                out.append(f'CHAT {pid} 판정 규칙·자가개선 절차 변경: 채팅 반영'); continue
             elif 'build.py' in touched and subprocess.run([sys.executable, '-m', 'py_compile', f'{W}/build.py'],
                                                           capture_output=True).returncode:
                 why = 'build.py 문법 오류'

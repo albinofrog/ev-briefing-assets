@@ -4,7 +4,7 @@
 
 ## 하는 일과 하지 않는 일
 
-- 합니다: `rules.md`(또는 비교할 개정안) 0·2~6절과 `prompt.md` 다절 2·3번(briefing.json 작성, check)
+- 합니다: `rules.md`(또는 비교할 개정안) 0·2~6절과 `prompt.md` 다절 2~5번(선별·판정, 검토 마감, briefing.json 작성, check)
 - 하지 않습니다: 메모리 읽기·쓰기, render, 파일 전달(SendUserFile), 푸시, 장부 기록. 장부는 스냅샷의 `/tmp/ev/sent.md`만 씁니다.
 - "현재 시각"은 스냅샷의 작업 시작 시각입니다. 수록 기준은 prep 출력대로 따릅니다.
 
