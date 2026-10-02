@@ -9,6 +9,11 @@
   python3 build.py failpush 단계   푸시 문구 앞에 [실패] 단계 표시 추가
   python3 build.py seen URL ...    직접 찾은 기사 URL이 장부에 있는지 확인
 
+  개선안 결정 반영(준비 단계, prep 전):
+  python3 build.py decide DIR      보드 proposals·decisions → 처리할 결정(/tmp/ev/decisions.txt)·승인분 수정(/tmp/ev/patches_new.jsonl)
+  python3 build.py patch REF       적용 중인 수정(/tmp/ev/patches.jsonl) 재적용 + 새 승인분은 고정 줄·문법·회귀(eval/score.py, REF) 통과분만 적용
+                                   → /tmp/ev/patches_keep.jsonl(메모리 patches.md). prep은 새로 받은 sources.md·watchlist.md에 다시 적용
+
   자가개선(전달 뒤):
   python3 build.py probe           이번 회차 놓침 탐지 검색어 4개(rules.md 9절에서 metrics.md 회차 수로 순환, 검색어 언어로 연월을 붙임)
   python3 build.py board FILE [nodeliver]   briefing.json → 피드백 보드 db 쓰기 목록(/tmp/ev/board.json). 전달 실패면 nodeliver(항목 제외)
@@ -147,6 +152,7 @@ def prep():
         print(f"{'OK  ' if not err else '실패'} {src.split('/')[-1]}" + (f' | {err}' if err else ''))
     if fails:
         print('필수 파일 실패: ' + ', '.join(fails)); sys.exit(1)
+    reapply_assets()
     status = json.load(open(f'{W}/status.json'))
     age = kst(st['start']) - kst(status['generated_at'])
     print(f"수집 데이터: {status['generated_at']} 생성({int(age.total_seconds() // 3600)}시간 전), 보관 {status['total']}건")
@@ -1120,10 +1126,10 @@ def board(path, delivered=True):
     if os.path.exists(f'{W}/metrics.json'):  # scorecard가 만든 이번 회차 지표
         m = json.load(open(f'{W}/metrics.json'))
         writes.append({'op': 'set', 'collection': 'metrics', 'doc_id': 'm' + re.sub(r'[^0-9]', '', st['start'])[:12], 'data': m})
-    if os.path.exists(f'{W}/proposals_new.json'):  # 이번 회차 새 개선안 [{id,title,layer,evidence,change,effect}]
+    if os.path.exists(f'{W}/proposals_new.json'):  # 이번 회차 새 개선안 [{id,title,layer,evidence,change,effect,edits}]
         for pr in json.load(open(f'{W}/proposals_new.json', encoding='utf-8')):
             writes.append({'op': 'set', 'collection': 'proposals', 'doc_id': pr['id'], 'data': {
-                **{k: pr.get(k, '') for k in ('title', 'layer', 'evidence', 'change', 'effect')},
+                **{k: pr.get(k, '') for k in ('title', 'layer', 'evidence', 'change', 'effect')}, 'edits': pr.get('edits') or [],
                 'status': 'pending', 'issue': issue, 'created': st['start']}})
     json.dump(writes, open(f'{W}/board.json', 'w'), ensure_ascii=False)
     print(f'{W}/board.json ({len(writes)}건: 제{issue:03d}호 항목·지표·새 개선안) → ArtifactData batch(writes=이 파일 내용, 50건씩)')
@@ -1450,6 +1456,152 @@ def guard(old, new):
     print(f'고정 줄 {len(a)}개 그대로')
 
 
+PATCHABLE = ('rules.md', 'improve.md', 'build.py', 'sources.md', 'watchlist.md')
+
+
+def read_jsonl(p):
+    out = []
+    for l in (open(p, encoding='utf-8').read().splitlines() if os.path.exists(p) else []):
+        if l.strip().startswith('{'):
+            try: out.append(json.loads(l))
+            except ValueError: pass
+    return out
+
+
+def by_id(rows):
+    g = {}
+    for r in rows: g.setdefault(r.get('id', '?'), []).append(r)
+    return g
+
+
+def apply_group(edits, files=PATCHABLE, strict=False):
+    """한 개선안의 수정(edits)을 W의 파일 사본에 모두 적용하거나 하나도 적용하지 않음.
+    strict가 아니면(적용 중인 수정) 저장소에 이미 통합된 수정(new가 있고 old가 그 안에서만 남음)은 건너뜀.
+    새 승인분(strict)은 old가 정확히 한 곳 있어야 함. 반환 (ok|already|none|fail, 사유, 원본, 바꾼 파일)."""
+    back, touched, done = {}, set(), False
+    def undo():
+        for p, t in back.items(): open(p, 'w', encoding='utf-8').write(t)
+    for e in edits:
+        f, old, new = e.get('file'), e.get('old') or '', e.get('new') or ''
+        if f not in files: continue
+        p = f'{W}/{f}'
+        if not os.path.exists(p): undo(); return 'fail', f'{f} 없음', {}, set()
+        t = open(p, encoding='utf-8').read()
+        back.setdefault(p, t)
+        if not strict and new and new in t and t.count(old) == new.count(old): continue  # 이미 통합
+        if not strict and not new and old and old not in t: continue  # 삭제가 이미 통합
+        if not old or t.count(old) != 1:
+            undo(); return 'fail', f'{f}: 고칠 문구가 {t.count(old) if old else 0}곳(1곳이어야 함)', {}, set()
+        open(p, 'w', encoding='utf-8').write(t.replace(old, new)); touched.add(f); done = True
+    return ('ok' if done else 'already' if back else 'none'), '', back, touched
+
+
+def gate(ref):
+    """새 수정이 들어간 build.py·sources.md·watchlist.md로 평가 세트 prep 회귀(eval/score.py)를 /tmp/evgate에서 돌림. (통과, 마지막 줄)"""
+    import shutil
+    G = '/tmp/evgate'; src = f'{G}/src'; raw = REPO.replace('/main/', f'/{ref}/')
+    shutil.rmtree(G, ignore_errors=True); os.makedirs(f'{src}/eval/snapshot-20261001'); os.makedirs(f'{src}/fonts')
+    for f in ('eval/score.py', 'eval/cases.json') + tuple(f'eval/snapshot-20261001/{x}' for x in
+                                                          ('items.jsonl', 'status.json', 'memstate.md', 'sent.md', 'start.txt')):
+        err = curl(raw + f, f'{src}/{f}')
+        if err: return False, f'평가 파일 받기 실패 {f}: {err}'
+    for s, _ in ASSETS:
+        if s.startswith('http'): continue
+        if os.path.exists(f'{W}/{s}'): open(f'{src}/{s}', 'wb').write(open(f'{W}/{s}', 'rb').read())
+        else:
+            err = curl(s, f'{src}/{s}')
+            if err: return False, f'자산 받기 실패 {s}: {err}'
+    open(f'{src}/build.py', 'w', encoding='utf-8').write(open(f'{W}/build.py', encoding='utf-8').read())
+    r = subprocess.run([sys.executable, f'{src}/eval/score.py', '--build', f'{src}/build.py'], capture_output=True, text=True,
+                       env={**os.environ, 'EV_W': f'{G}/w'}, timeout=600)
+    tail = [l for l in (r.stdout + r.stderr).splitlines() if l.strip()]
+    fails = [l for l in tail if l.startswith('FAIL') and '알려진 공백' not in l]
+    return r.returncode == 0, '; '.join(fails[:3]) or (tail[-1] if tail else '출력 없음')
+
+
+def decide(d):
+    """보드 proposals·decisions(DIR/<컬렉션>/<id>.json) → 처리할 결정(decisions.txt)과 승인분 수정(patches_new.jsonl)."""
+    props = {p['_id']: p for p in doc_rows(d, 'proposals')}
+    dec, new = [], []
+    for x in doc_rows(d, 'decisions'):
+        p = props.get(x['_id'])
+        if not p or p.get('status') != 'pending' or x.get('decision') not in ('approve', 'reject'): continue
+        ed = p.get('edits') or []
+        ok = isinstance(ed, list) and bool(ed) and all(isinstance(e, dict) and e.get('file') in PATCHABLE + ('prompt',)
+                                                       and (e.get('old') or '').strip() for e in ed)
+        dec.append(f"{x['_id']} | {x['decision']} | {p.get('layer', '')} | {f'edits {len(ed)}' if ok else 'edits 없음'} | "
+                   f"{p.get('title', '')[:60]} | {(x.get('note') or '').strip()[:80]}")
+        if x['decision'] == 'approve' and ok:
+            new += [{'id': x['_id'], 'file': e['file'], 'old': e['old'], 'new': e.get('new') or ''} for e in ed]
+    open(f'{W}/decisions.txt', 'w').write('\n'.join(dec) + ('\n' if dec else ''))
+    with open(f'{W}/patches_new.jsonl', 'w', encoding='utf-8') as fh:
+        for r in new: fh.write(json.dumps(r, ensure_ascii=False) + '\n')
+    print(f'처리할 결정 {len(dec)}건 → {W}/decisions.txt, 승인분 수정 {len(new)}줄 → {W}/patches_new.jsonl')
+    for l in dec: print('  결정: ' + l)
+
+
+def patch_cmd(ref):
+    """적용 중인 수정(patches.jsonl)을 파일 사본에 다시 적용하고, 새 승인분(patches_new.jsonl)은 고정 줄·문법·회귀 검사를 통과한 것만 더함.
+    결과 patches_keep.jsonl(메모리 patches.md에 저장할 내용)."""
+    for f in ('sources.md', 'watchlist.md'):
+        if not os.path.exists(f'{W}/{f}'): curl(f, f'{W}/{f}')
+    keep, out, live = [], [], set()  # live: 사본에만 들어가고 저장소에는 아직 없는 개선안
+    for pid, ed in by_id(read_jsonl(f'{W}/patches.jsonl')).items():
+        r, why, _, _ = apply_group(ed)
+        keep += ed
+        if r == 'ok': live.add(pid)
+        out.append(f'CONFLICT {pid} {why}' if r == 'fail' else f'KEEP {pid} {r}')
+        if any(e.get('file') == 'prompt' for e in ed): out.append(f'PROMPT {pid}')
+    known = {e.get('id') for e in keep}
+    for pid, ed in by_id(read_jsonl(f'{W}/patches_new.jsonl')).items():
+        if pid in known: out.append(f'SKIP {pid} 이미 적용 중'); continue
+        files = {e.get('file') for e in ed} - {'prompt'}
+        pick = lambda f: [l for l in (open(f'{W}/{f}', encoding='utf-8').read().splitlines() if os.path.exists(f'{W}/{f}') else [])
+                          if any(re.search(x, l) for x in LOCK)]
+        lock0 = {f: pick(f) for f in files}
+        r, why, back, touched = apply_group(ed, strict=True)
+        if r != 'fail':
+            if any(pick(f) != lock0[f] for f in files): why = '고정 줄 변경'
+            elif 'build.py' in touched and subprocess.run([sys.executable, '-m', 'py_compile', f'{W}/build.py'],
+                                                          capture_output=True).returncode:
+                why = 'build.py 문법 오류'
+            elif touched & {'build.py', 'sources.md', 'watchlist.md'}:
+                ok, msg = gate(ref)
+                why = '' if ok else f'회귀 평가 실패: {msg}'
+            if why:
+                for p, t in back.items(): open(p, 'w', encoding='utf-8').write(t)
+                r = 'fail'
+        if r == 'fail': out.append(f'FAIL {pid} {why}'); continue
+        keep += ed; live.add(pid)
+        out.append(f'OK {pid} {",".join(sorted(touched)) or "변경 없음"}')
+        if any(e.get('file') == 'prompt' for e in ed): out.append(f'PROMPT {pid}')
+    with open(f'{W}/patches_keep.jsonl', 'w', encoding='utf-8') as fh:
+        for e in keep: fh.write(json.dumps(e, ensure_ascii=False) + '\n')
+    for l in out: print(l)
+    pr = [e for e in keep if e.get('file') == 'prompt']
+    if pr:
+        print('프롬프트 수정(이번 회차부터 아래 문구로 바꿔 읽음):')
+        for e in pr: print(f"  [{e['id']}] 고치기 전: {e['old']}\n         고친 뒤: {e['new']}")
+    # GitHub Actions(collect.py)는 저장소의 sources.md·watchlist.md로 수집하므로, 통합 전까지 새 검색어는 수집되지 않음
+    coll = sorted({e['id'] for e in keep if e['id'] in live and e.get('file') in ('sources.md', 'watchlist.md')})
+    terms = [l[2:].split(' | ')[0].strip() for e in keep if e['id'] in live and e.get('file') == 'watchlist.md'
+             for l in (e.get('new') or '').splitlines() if l.startswith('- ') and l not in (e.get('old') or '').splitlines()]
+    open(f'{W}/pending_collect.txt', 'w', encoding='utf-8').write(''.join(t + '\n' for t in terms))
+    if coll:
+        print(f"수집 범위 수정 {len(coll)}건({', '.join(coll)}): 저장소 통합 전까지 GitHub Actions 수집에 들어가지 않음"
+              + (f" → 새 검색어 {len(terms)}개 {W}/pending_collect.txt(회차가 WebSearch로 대신 찾음)" if terms else ''))
+    print(f'patches_keep.jsonl {len(keep)}줄 → 메모리 patches.md')
+
+
+def reapply_assets():
+    """prep이 main에서 새로 받은 sources.md·watchlist.md에 적용 중인 수정을 다시 넣음."""
+    out = []
+    for pid, ed in by_id(read_jsonl(f'{W}/patches_keep.jsonl')).items():
+        r, why, _, _ = apply_group(ed, ('sources.md', 'watchlist.md'))
+        if r in ('ok', 'fail'): out.append(f"{pid} {'적용' if r == 'ok' else '충돌 ' + why}")
+    if out: print('적용 중인 수정(sources·watchlist): ' + ', '.join(out))
+
+
 if __name__ == '__main__':
     a = sys.argv[1:]
     if not a: sys.exit(__doc__)
@@ -1463,6 +1615,8 @@ if __name__ == '__main__':
     elif a[0] == 'probe': probe()
     elif a[0] == 'board': board(a[1], 'nodeliver' not in a[2:])
     elif a[0] == 'guard': guard(a[1], a[2])
+    elif a[0] == 'decide': decide(a[1])
+    elif a[0] == 'patch': patch_cmd(a[1] if len(a) > 1 else 'main')
     elif a[0] == 'feedback': feedback(a[1], a[2] if len(a) > 2 else '')
     elif a[0] == 'trace': trace(a[1], a[2:])
     elif a[0] in ('scorecard', 'yield'): scorecard(a[1])
