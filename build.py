@@ -475,7 +475,7 @@ def cluster(cands, sent, hist=()):
     led = {norm(r['key'].split('/')[0]) for r in sent if r.get('key') and r['key'] != '-'}
     groups = []
     for mem in bucket.values():
-        for o in mem: o['portal'] = bool(o.get('portal')) or dom_in(host(o['url']), BLOCKED)
+        for o in mem: o['portal'] = bool(o.get('portal')) or url_in(o['url'], e_lists()[1])
         mem.sort(key=lambda o: (o['portal'], not dom_in(host(o['url']), tier1),
                                 RGN_ORDER.index(region_of(o)) if region_of(o) in RGN_ORDER else 9, o['_t']))
         rep, best = mem[0], max((score_item(o) for o in mem), key=lambda x: x[0])
@@ -510,6 +510,30 @@ EXCLUDED = ['tistory.com', 'blog.naver.com', 'brunch.co.kr', 'medium.com', 'subs
             'twitter.com', 'facebook.com', 'linkedin.com', 'youtube.com', 'reddit.com', 'weibo.com', 'zhihu.com',
             'toutiao.com', 'baijiahao.baidu.com', 'wikipedia.org']
 GENERIC_ACT = {'발표', '공개', '밝힘', '언급', '보도', '-'}
+_ELISTS = None
+
+
+def e_lists():
+    """sources.md E절의 (제외, 발견 전용) 목록. 수집기(collect.py)와 같은 목록을 쓰며, 파일을 못 읽으면 위의 코드 목록."""
+    global _ELISTS
+    if _ELISTS is None:
+        excl, disc = EXCLUDED, BLOCKED
+        try:
+            t = open(f'{W}/sources.md', encoding='utf-8').read()
+            e = t[t.index('## E.'):]
+            if '\n## ' in e[4:]: e = e[:e.index('\n## ', 4)]
+            got = {k: [x.strip().lower() for x in v.split(',') if x.strip()] for k, v in re.findall(r'^(제외|발견 전용):\s*(.+)$', e, re.M)}
+            excl, disc = got.get('제외') or excl, got.get('발견 전용') or disc
+        except (OSError, ValueError):
+            pass
+        _ELISTS = (excl, disc)
+    return _ELISTS
+
+
+def url_in(u, doms):
+    """도메인 항목은 호스트로, '/'가 든 항목(도메인/경로)은 URL 포함 여부로(collect.py와 같은 방식)."""
+    h = host(u)
+    return any((d in u) if '/' in d else (h == d or h.endswith('.' + d)) for d in doms)
 
 
 def auto_tier(u):
@@ -702,8 +726,8 @@ def check(path, quiet=False):
                 elif mt['min'] and has_t and fp > kst(mt['min']) + dt.timedelta(hours=1):
                     Wn.append(f"{L}: first_public이 묶음의 가장 이른 목록 시각 {kst(mt['min']):%m-%d %H:%M}보다 늦음 → 같은 사건이면 그 시각 이하로")
         for u in [it['url']] + ([o['url']] if o else []):
-            if dom_in(host(u), BLOCKED): E.append(f'{L}: 포털·발견 전용 URL 금지 {host(u)} → 원 매체 URL')
-            if dom_in(host(u), EXCLUDED): E.append(f'{L}: 제외 출처(블로그·SNS·UGC) {host(u)}')
+            if url_in(u, e_lists()[1]): E.append(f'{L}: 포털·발견 전용 URL 금지 {host(u)} → 원 매체 URL')
+            if url_in(u, e_lists()[0]): E.append(f'{L}: 제외 출처(sources.md E절) {host(u)}')
         nu = nurl(it['url'])
         if nu in urls: E.append(f'{L}: 같은 URL 중복 수록(항목 {urls[nu]})')
         urls[nu] = i

@@ -239,4 +239,42 @@ check('푸시·리포트 제보 안내', "' | 제보·평가 {bu}'" in t and '�
 # 푸시 길이 상한: 접미사 길이와 예약분 일치
 check('푸시 접미사 예약 길이 일치', len(' | 제보·평가 ') == 9)
 
+# ── 4. 제외·발견 전용 목록: check·prep이 sources.md E절(수집기와 같은 목록)을 씀
+import ast
+spec = importlib.util.spec_from_file_location('b_e', B); be = importlib.util.module_from_spec(spec)
+W = setup(); os.environ['EV_W'] = W
+with warnings.catch_warnings():
+    warnings.simplefilter('ignore'); spec.loader.exec_module(be)
+excl, disc = be.e_lists()
+src = open(f'{REPO}/collect.py', encoding='utf-8').read()
+fn = next(n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == 'parse_sources')
+ns = {'re': re}; exec(ast.get_source_segment(src, fn), ns)
+_, _, c_excl, c_disc = ns['parse_sources'](f'{REPO}/sources.md')
+check('E 제외 목록 = 수집기 목록', sorted(excl) == sorted(c_excl) and len(excl) >= 27, (sorted(set(excl) ^ set(c_excl))))
+check('E 발견 전용 목록 = 수집기 목록', sorted(disc) == sorted(c_disc), sorted(set(disc) ^ set(c_disc)))
+check('E 코드 대비 목록이 sources.md의 부분집합', set(be.EXCLUDED) <= set(excl) and set(be.BLOCKED) <= set(disc), sorted((set(be.EXCLUDED) - set(excl)) | (set(be.BLOCKED) - set(disc))))
+check('E 경로 항목은 URL 포함으로 판정', be.url_in('https://www.usatoday.com/press-release/story/1', excl) and not be.url_in('https://www.usatoday.com/story/money/1', excl))
+check('E 하위 도메인도 판정', be.url_in('https://www.thecooldown.com/green-business/x', excl) and be.url_in('https://m.blog.naver.com/a', excl))
+# sources.md를 못 읽으면 코드 목록으로
+W2 = tempfile.mkdtemp(); os.environ['EV_W'] = W2
+spec2 = importlib.util.spec_from_file_location('b_e2', B); be2 = importlib.util.module_from_spec(spec2)
+with warnings.catch_warnings():
+    warnings.simplefilter('ignore'); spec2.loader.exec_module(be2)
+check('E sources.md 없으면 코드 목록', be2.e_lists() == (be2.EXCLUDED, be2.BLOCKED))
+# check가 실제로 막는지(최소 briefing)
+W = setup()
+json.dump({'start': '2026-10-05T22:00:00+00:00', 'cutoff': '2026-10-02T22:00:00+00:00', 'issue': 6}, open(f'{W}/state.json', 'w'))
+open(f'{W}/sent.md', 'w').write('')
+def ref_item(u, h):
+    return {'tier': 'ref', 'axis': 3, 'region': '미국', 'headline': h, 'orig_title': 't', 'summary': '본문 미확인', 'outlet': 'x',
+            'url': u, 'published': '10-05 09:00', 'published_kst': '10-05 09:00', 'first_public': '2026-10-05 09:00',
+            'body_read': False, 'relevance': 3, 'source_tier': 3, 'trust_fail': None, 'origin': None, 'event_key': h + ' / 발표 / -'}
+json.dump({'items': [ref_item('https://www.thecooldown.com/green-business/used-ev-battery', '중고 EV 배터리 사례 소개'),
+                     ref_item('https://www.usatoday.com/press-release/story/123', '보도자료 게재 발표'),
+                     ref_item('https://www.usatoday.com/story/money/cars/123', '중고 EV 가격 하락 보도')],
+           'calls': {'본문': 0, '보조': 0}, 'dropped': [], 'deferred': [], 'errors': []}, open(f'{W}/b.json', 'w'), ensure_ascii=False)
+c, o = run(W, 'check', f'{W}/b.json')
+ex = [l for l in o.splitlines() if '제외 출처' in l]
+check('E check가 thecooldown·usatoday 보도자료 경로를 막고 일반 기사는 통과', len(ex) == 2 and any('[1]' in l for l in ex) and any('[2]' in l for l in ex) and not any('[3]' in l for l in ex), o)
+
 print(f'\n{fails} failed'); sys.exit(1 if fails else 0)
