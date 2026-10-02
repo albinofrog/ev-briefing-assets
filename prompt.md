@@ -9,7 +9,7 @@
    - `judge` rules.md 2~6절, `meta` rules.md 9절·improve.md, `code` build.py·collect.py·sources.md A·C·G·H절.
    - `prompt`: 이 프롬프트.
 5. 메모리 `config.md`에 `improve: off`가 있으면 라절 전체를 건너뜁니다.
-6. 검증 실행: 메모리 `config.md`에 `dry: on`이 있으면 메모리와 보드에 아무것도 쓰지 않고 푸시도 보내지 않습니다(나절 4번, 다절 8~11번, improve.md 3·7·8번의 쓰기와 알림을 건너뜀). 판단·제작·파일 전달과 세션 마지막 메시지는 평소대로 하고, 마지막 메시지 맨 앞에 "[검증 실행]"을 적습니다.
+6. 검증 실행: 메모리 `config.md`에 `dry: on`이 있으면 메모리와 보드에 아무것도 쓰지 않고 푸시도 보내지 않습니다(나절 4번, 다절 8~11번, 마절 3·7번의 푸시와 run_log 기록, improve.md 3·7·8번의 쓰기와 알림을 건너뜀). 판단·제작·파일 전달과 세션 마지막 메시지는 평소대로 하고, 마지막 메시지 맨 앞에 "[검증 실행]"을 적습니다.
 
 ## 나. 준비
 1. 메모리 `config.md`를 읽습니다(`ref:` 커밋, `board:` 보드 URL, `fb_seen:` 시각, `improve:`, `dry:`). 파일이 없거나 읽기 오류면 `ref`를 `main`으로, `improve`를 `off`로 보고 진행하며 푸시 앞에 "[경고] 설정 없음 "을 붙입니다. 그다음 `mkdir -p /tmp/ev && cd /tmp/ev && for f in build.py rules.md; do curl -sSfL -o $f https://raw.githubusercontent.com/albinofrog/ev-briefing-assets/<ref>/$f; done`로 필수 파일을 받고, 같은 방식으로 `improve.md`를 받습니다(실패하면 `improve`를 `off`로 보고 푸시 앞에 "[경고] 개선 절차 없음 "을 붙임). `board:` 값은 `/tmp/ev/board_url.txt`에 저장합니다(리포트와 푸시에 보드 링크로 들어감). build.py·rules.md·improve.md만 `ref`에 고정되고, sources.md·watchlist.md·template.html·수집 데이터는 build.py가 main과 data 브랜치에서 받습니다(자동 계층 변경은 바로 반영됨).
