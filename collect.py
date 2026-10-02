@@ -177,6 +177,8 @@ def bing_url(link):
 def main(out):
     here = os.path.dirname(os.path.abspath(__file__))
     feeds, words, excl, portal = parse_sources(os.path.join(here, 'sources.md'))
+    tx = re.findall(r'^제목 제외:\s*(.+)$', open(os.path.join(here, 'sources.md'), encoding='utf-8').read(), re.M)
+    title_excl = [w.strip().lower() for w in (tx[0].split(',') if tx else []) if w.strip()]  # 광고·스팸 제목(포함 여부)
     watch = parse_watch(os.path.join(here, 'watchlist.md'))
     ok = matcher(words)
     brand = {w['q'] for w in watch if w['brand']}
@@ -232,6 +234,8 @@ def main(out):
 
     def add(src, region, kind, it, first_seen, bf=False):
         if not it['url'].startswith('http') or not it['title'] or dom_in(it['url'], excl) or any(x in it['url'] for x in paths):
+            return False
+        if any(w in it['title'].lower() for w in title_excl):
             return False
         if it['pub'] and it['pub'] < fresh:
             return False

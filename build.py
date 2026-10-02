@@ -8,17 +8,26 @@
   python3 build.py trim sent|log   /tmp/ev/sent.md 또는 /tmp/ev/run_log.md 정리본 출력
   python3 build.py failpush 단계   푸시 문구 앞에 [실패] 단계 표시 추가
   python3 build.py seen URL ...    직접 찾은 기사 URL이 장부에 있는지 확인
+  python3 build.py ledger merge [DIR]   메모리 장부(/tmp/ev/sent.md)와 보드 ledger 문서(DIR/ledger/*.json)를 합쳐 /tmp/ev/sent.md로 저장
+  python3 build.py ledger board [FILE]  장부 줄(기본 /tmp/ev/ledger.txt) → 보드 ledger 쓰기 목록(/tmp/ev/ledger_board.json)
 
-  개선안 결정 반영(준비 단계, prep 전):
-  python3 build.py decide DIR      보드 proposals·decisions → 처리할 결정(/tmp/ev/decisions.txt)·승인분 수정(/tmp/ev/patches_new.jsonl)
-  python3 build.py patch REF       적용 중인 수정(/tmp/ev/patches.jsonl) 재적용 + 새 승인분은 고정 줄·문법·회귀(eval/score.py, REF) 통과분만 적용
+  적용 중인 수정 재적용(준비 단계, prep 전):
+  python3 build.py patch --keep REF [BOARD_DIR]   적용 중인 수정(/tmp/ev/patches.jsonl)만 재적용. BOARD_DIR(보드 proposals)을 읽었으면
+                                   status가 applied가 아닌 개선안은 빼고, prompt 수정은 가절(고정 원칙)을 건드리면 뺌. 검사·회귀 없음
                                    → /tmp/ev/patches_keep.jsonl(메모리 patches.md). prep은 새로 받은 sources.md·watchlist.md에 다시 적용
 
+  개선안 결정 반영(자가개선 단계, 전달 뒤. 통과분은 다음 회차부터 씀):
+  python3 build.py decide DIR      보드 proposals·decisions → 처리할 결정(/tmp/ev/decisions.txt)·승인분 수정(/tmp/ev/patches_new.jsonl)
+  python3 build.py patch REF       적용 중인 수정 + 새 승인분(고정 줄·가절·문법·회귀(eval/score.py, REF) 통과분만) → /tmp/ev/patches_keep.jsonl
+                                   rules.md·improve.md 수정은 회귀 문항이 없어 CHAT(채팅 반영)
+
   자가개선(전달 뒤):
+  python3 build.py promote [FILE]  lessons.md(기본 /tmp/ev/lessons.md)에서 9절 승격 임계에 닿은 교훈과 임계 미달인 제안을 출력
+  python3 build.py rated           /tmp/ev/metrics.md 최근 발행 10회차(핵심·참고 합 1 이상인 줄) 평가 칸 합
   python3 build.py probe           이번 회차 놓침 탐지 검색어 4개(rules.md 9절에서 metrics.md 회차 수로 순환, 검색어 언어로 연월을 붙임)
   python3 build.py board FILE [nodeliver]   briefing.json → 피드백 보드 db 쓰기 목록(/tmp/ev/board.json). 전달 실패면 nodeliver(항목 제외)
   python3 build.py guard OLD NEW   rules.md 고정 줄(사업 맥락·금지 항목·예산·금지 출처)이 바뀌었으면 종료 1
-  python3 build.py feedback DIR SINCE   보드에서 받은 문서(DIR/<컬렉션>/<id>.json) → 신호(signals.md)·놓침 제보(missed.txt)·정답(gold.txt)·결정(decisions.txt)
+  python3 build.py feedback DIR SINCE   보드에서 받은 문서(DIR/<컬렉션>/<id>.json) → 신호(signals.md)·놓침 제보(missed.txt)·정답(gold.txt). 결정은 decide만 다룸
   python3 build.py trace CODE URL[|제목] ...   URL(못 찾으면 제목)이 수집·후보·장부·이월 어디서 빠졌는지 원인 코드 부여, signals.md에 추가
   python3 build.py coverage        검색 주제(추적 검색어 절·권역)별 수집·후보·검토·수록 현황과 주제 공백(/tmp/ev/coverage.json)
   python3 build.py scorecard FILE  세 목표 점수표·지표 한 줄(/tmp/ev/metrics_line.txt)·출처별 최근 10회 기여(/tmp/ev/metrics.md 이력 사용)
@@ -156,8 +165,8 @@ def prep():
     status = json.load(open(f'{W}/status.json'))
     age = kst(st['start']) - kst(status['generated_at'])
     print(f"수집 데이터: {status['generated_at']} 생성({int(age.total_seconds() // 3600)}시간 전), 보관 {status['total']}건")
-    if age > dt.timedelta(hours=6):
-        print('경고: 수집 데이터가 6시간 넘게 갱신되지 않음(GitHub Actions 확인 필요)')
+    if age > dt.timedelta(hours=3):  # 브리핑 직전 슬롯(21:10·21:23·21:40Z)을 모두 건너뛰면 경고
+        print('경고: 수집 데이터가 3시간 넘게 갱신되지 않음(GitHub Actions 확인 필요)')
     sent = read_sent()
     seen = {h for r in sent for h in [r['url'] if r['url'].startswith('u:') else uhash(r['url'])] + r['alt']} if isinstance(sent, list) else set()
     lo = (kst(st['cutoff']) - dt.timedelta(hours=12)).astimezone(dt.timezone.utc).isoformat()[:19]
@@ -851,7 +860,7 @@ def render(path):
     if fails:
         push = '[실패] ' + ','.join(sorted(set(f.split(':')[0] for f in fails))) + ' ' + push
     bu = board_url()
-    push = push[:200 - (len(bu) + 6 if bu else 0)] + (f' | 평가 {bu}' if bu else '')
+    push = push[:200 - (len(bu) + 9 if bu else 0)] + (f' | 제보·평가 {bu}' if bu else '')
     calls = d.get('calls', {})
     total = sum(v for v in calls.values() if isinstance(v, int))
     head = f"## {'제' + nnn + '호' if items else '발행 없음'} | 시작 {st['start']} | 기준 {c:%m-%d %H:%M}~{s:%m-%d %H:%M} KST | 핵심 {len(core)}·참고 {len(refs)} | 파일 {'PDF·HTML' if len(files) == 2 else ('HTML' if files else '없음')}"
@@ -915,7 +924,7 @@ def build_html(d, s, c, nnn, date, fails):
              '    <h1>EV 시장·정책 브리핑</h1><div class="sub">배터리 데이터 신사업을 위한 국내외 시장·정책 일간 동향</div></div>\n'
              f'  <dl><dt>이슈</dt><dd>제{nnn}호</dd><dt>발행일</dt><dd>{date} ({WEEK[s.weekday()]})</dd><dt>작성</dt><dd>{s:%H:%M} KST</dd>'
              f'<dt>조사 창</dt><dd>{c:%m-%d %H:%M} ~ {s:%m-%d %H:%M} KST</dd>'
-             + (f'<dt>평가</dt><dd><a href="{esc(board_url())}">피드백 보드</a></dd>' if board_url() else '') + '</dl>\n</header>')
+             + (f'<dt>제보·평가</dt><dd><a href="{esc(board_url())}">피드백 보드(놓친 기사 URL 제보)</a></dd>' if board_url() else '') + '</dl>\n</header>')
     core = [i for i in items if i['tier'] == 'core']
     tops = sorted([i for i in core if i.get('top')], key=lambda x: x['top'])
     for i in tops: i['_id'] = f"k{i['top']}"
@@ -1051,6 +1060,41 @@ def seen_cmd(urls):
         print(('기수록(제외) ' if uhash(u) in hs else '신규 ') + u)
 
 
+def ledger_key(ln):
+    p = [x.strip() for x in ln.split(' | ')]
+    if len(p) < 5 or not re.match(r'\d{4}-\d{2}-\d{2}$', p[0]): return None
+    return p[2] if p[2] != '-' else 'k:' + p[4]  # URL 칸이 비면 사건 키로 구분
+
+
+def ledger(cmd, arg=None):
+    p = f'{W}/sent.md'
+    if cmd == 'board':
+        src = arg or f'{W}/ledger.txt'
+        ls = [l.strip() for l in (open(src, encoding='utf-8').read().splitlines() if os.path.exists(src) else []) if ledger_key(l)]
+        w = [{'op': 'set', 'collection': 'ledger', 'doc_id': 'l' + hashlib.sha1(ledger_key(l).encode()).hexdigest()[:12],
+              'data': {'line': l, 'date': l[:10]}} for l in ls]
+        json.dump(w, open(f'{W}/ledger_board.json', 'w'), ensure_ascii=False)
+        print(f'{W}/ledger_board.json ({len(w)}건) → ArtifactData batch(writes=이 파일 내용, 50건씩, 새 문서라 if_version 없이)')
+        return
+    mem = open(p, encoding='utf-8').read() if os.path.exists(p) else ''
+    mem_failed = mem.strip() == 'READ_FAILED'
+    rows = {}
+    for l in ([] if mem_failed else mem.splitlines()):
+        k = ledger_key(l)
+        if k: rows[k] = l.strip()
+    nb, board_ok = 0, bool(arg) and os.path.isdir(f'{arg}/ledger')
+    for o in (doc_rows(arg, 'ledger') if board_ok else []):
+        l = (o.get('line') or '').strip(); k = ledger_key(l)
+        if not k: continue
+        nb += 1
+        old = rows.get(k)  # 메모리 줄이 거부 대체(사건 키 '-')면 보드 줄을 씀
+        if old is None or old.split(' | ')[4].strip() == '-': rows[k] = l
+    if mem_failed and not board_ok:
+        print('장부: 메모리 읽기 실패, 보드 없음 → READ_FAILED 유지'); return
+    open(p, 'w', encoding='utf-8').write(''.join(l + '\n' for l in rows.values()))
+    print(f"장부: 메모리 {'읽기 실패' if mem_failed else '있음'}, 보드 {nb if board_ok else '없음'}건 → {p} {len(rows)}줄")
+
+
 def failpush(stage):
     p = f'{W}/push.txt'
     t = open(p).read().strip()
@@ -1158,23 +1202,15 @@ def feedback(d, since):
         miss.append(f"{m['url'].strip()} | {(m.get('note') or '').strip()[:80]}")
         gold.append(f"{last} | {uhash(m['url'])} | {m['url'].strip()} | 수록 | {(m.get('note') or '').strip()[:80]}")
     props = {p['_id']: p for p in doc_rows(d, 'proposals')}
-    dec, orphan = [], []
-    for x in doc_rows(d, 'decisions'):
-        p = props.get(x['_id'])
-        if not p:
-            if (x.get('at') or '') > since: orphan.append(f"{x['_id']} | {x.get('decision')} | 개선안 문서 없음")
-            continue
-        if p.get('status') == 'pending' and x.get('decision') in ('approve', 'reject'):
-            dec.append(f"{x['_id']} | {x['decision']} | {p.get('layer', '')} | {p.get('title', '')[:60]} | {(x.get('note') or '').strip()[:80]}")
+    orphan = [f"{x['_id']} | {x.get('decision')} | 개선안 문서 없음" for x in doc_rows(d, 'decisions')
+              if x['_id'] not in props and (x.get('at') or '') > since]  # 결정 처리는 decide가 맡음
     open(f'{W}/signals.md', 'w').write('\n'.join(sig) + ('\n' if sig else ''))
     open(f'{W}/gold.txt', 'w').write('\n'.join(gold) + ('\n' if gold else ''))
-    open(f'{W}/decisions.txt', 'w').write('\n'.join(dec) + ('\n' if dec else ''))
     open(f'{W}/missed.txt', 'w').write('\n'.join(miss) + ('\n' if miss else ''))
     json.dump(cnt, open(f'{W}/fb_count.json', 'w'))
     latest = max([o.get('at') or '' for c in ('feedback', 'missed', 'decisions') for o in doc_rows(d, c)] + [since])
     print(f"신호 {len(sig)}줄 → {W}/signals.md\n놓침 제보 {len(miss)}건 → {W}/missed.txt (trace MISS-U로 원인 확인)\n정답 {len(gold)}줄 → {W}/gold.txt\n"
-          f"처리할 결정 {len(dec)}건 → {W}/decisions.txt (lessons.md의 제안 번호와 대조)\n평가 {cnt['평가']}건 중 유용 {cnt['유용']}건\nfb_seen 다음 값: {latest}")
-    for l in dec: print('  결정: ' + l)
+          f"평가 {cnt['평가']}건 중 유용 {cnt['유용']}건\nfb_seen 다음 값: {latest}")
     for l in orphan: print('  대응 개선안 없는 결정(오류에 적음): ' + l)
 
 
@@ -1540,21 +1576,52 @@ def decide(d):
     for l in dec: print('  결정: ' + l)
 
 
-def patch_cmd(ref):
+def prompt_guard(old, new, ptxt):
+    """prompt 수정: old가 prompt.md에서 정확히 한 곳이고 가절(나절 앞) 밖이어야 함. 반환 (ok|already|fail, 사유)."""
+    if not ptxt: return 'fail', 'prompt.md 없음'
+    if new and new in ptxt and ptxt.count(old) == new.count(old): return 'already', ''
+    if ptxt.count(old) != 1: return 'fail', f'prompt 고칠 문구가 {ptxt.count(old)}곳(1곳이어야 함)'
+    na = ptxt.find('\n## 나.')
+    if na < 0: return 'fail', 'prompt.md에 나절 없음'
+    if ptxt.find(old) < na: return 'fail', '고정 원칙(가절) 변경'
+    return 'ok', ''
+
+
+def prompt_text(ref):
+    p = f'{W}/prompt.md'
+    if not os.path.exists(p) and curl(REPO.replace('/main/', f'/{ref}/') + 'prompt.md', p): return ''
+    return open(p, encoding='utf-8').read() if os.path.exists(p) else ''
+
+
+def patch_cmd(ref, keep_only=False, board_dir=None):
     """적용 중인 수정(patches.jsonl)을 파일 사본에 다시 적용하고, 새 승인분(patches_new.jsonl)은 고정 줄·문법·회귀 검사를 통과한 것만 더함.
     결과 patches_keep.jsonl(메모리 patches.md에 저장할 내용)."""
     for f in ('sources.md', 'watchlist.md'):
         if not os.path.exists(f'{W}/{f}'): curl(f, f'{W}/{f}')
     keep, out, live = [], [], set()  # live: 사본에만 들어가고 저장소에는 아직 없는 개선안
+    ptxt = prompt_text(ref)
+    status = None
+    if board_dir is not None:
+        if os.path.isdir(f'{board_dir}/proposals'):
+            status = {p['_id']: p.get('status') for p in doc_rows(board_dir, 'proposals')}
+        else: out.append('WARN 보드 proposals 없음: 적용 중인 수정을 보드 확인 없이 재적용')
     for pid, ed in by_id(read_jsonl(f'{W}/patches.jsonl')).items():
+        if status is not None and status.get(pid) != 'applied':
+            out.append(f'DROP {pid} 보드 status {status.get(pid) or "없음"}(applied 아님)'); continue
+        bad = [why for e in ed if e.get('file') == 'prompt' for r0, why in [prompt_guard(e.get('old') or '', e.get('new') or '', ptxt)] if r0 == 'fail']
+        if bad: out.append(f'DROP {pid} {bad[0]}'); continue
         r, why, _, _ = apply_group(ed)
         keep += ed
         if r == 'ok': live.add(pid)
         out.append(f'CONFLICT {pid} {why}' if r == 'fail' else f'KEEP {pid} {r}')
         if any(e.get('file') == 'prompt' for e in ed): out.append(f'PROMPT {pid}')
     known = {e.get('id') for e in keep}
-    for pid, ed in by_id(read_jsonl(f'{W}/patches_new.jsonl')).items():
+    for pid, ed in ({} if keep_only else by_id(read_jsonl(f'{W}/patches_new.jsonl'))).items():
         if pid in known: out.append(f'SKIP {pid} 이미 적용 중'); continue
+        bad = [why for e in ed if e.get('file') == 'prompt' for r0, why in [prompt_guard(e.get('old') or '', e.get('new') or '', ptxt)] if r0 == 'fail']
+        if bad: out.append(f'FAIL {pid} {bad[0]}'); continue
+        if {e.get('file') for e in ed} & {'rules.md', 'improve.md'}:  # 판정 문항 회귀가 없어 사용자 확인(채팅)으로 넘김
+            out.append(f'CHAT {pid} 판정 규칙·자가개선 절차 변경: 회귀 문항이 없어 채팅 반영'); continue
         files = {e.get('file') for e in ed} - {'prompt'}
         pick = lambda f: [l for l in (open(f'{W}/{f}', encoding='utf-8').read().splitlines() if os.path.exists(f'{W}/{f}') else [])
                           if any(re.search(x, l) for x in LOCK)]
@@ -1575,8 +1642,9 @@ def patch_cmd(ref):
         keep += ed; live.add(pid)
         out.append(f'OK {pid} {",".join(sorted(touched)) or "변경 없음"}')
         if any(e.get('file') == 'prompt' for e in ed): out.append(f'PROMPT {pid}')
-    with open(f'{W}/patches_keep.jsonl', 'w', encoding='utf-8') as fh:
-        for e in keep: fh.write(json.dumps(e, ensure_ascii=False) + '\n')
+    for f in ('patches_keep.jsonl',) + (('patches.jsonl',) if keep_only else ()):  # keep 모드는 뺀 개선안이 라절에 되살아나지 않게 patches.jsonl도 갱신
+        with open(f'{W}/{f}', 'w', encoding='utf-8') as fh:
+            for e in keep: fh.write(json.dumps(e, ensure_ascii=False) + '\n')
     for l in out: print(l)
     pr = [e for e in keep if e.get('file') == 'prompt']
     if pr:
@@ -1591,6 +1659,49 @@ def patch_cmd(ref):
         print(f"수집 범위 수정 {len(coll)}건({', '.join(coll)}): 저장소 통합 전까지 GitHub Actions 수집에 들어가지 않음"
               + (f" → 새 검색어 {len(terms)}개 {W}/pending_collect.txt(회차가 WebSearch로 대신 찾음)" if terms else ''))
     print(f'patches_keep.jsonl {len(keep)}줄 → 메모리 patches.md')
+
+
+def pub_lines():
+    p = f'{W}/metrics.md'
+    ls = open(p, encoding='utf-8').read().splitlines() if os.path.exists(p) else []
+    out = []
+    for l in ls:
+        m = re.search(r'핵심 (\d+) 참고 (\d+)', l)
+        if re.match(r'\d{4}-\d\d-\d\d \| ', l) and m and int(m.group(1)) + int(m.group(2)) >= 1: out.append(l)
+    return out
+
+
+def rated():
+    """최근 발행 10회차(9절 회차 창)의 평가 칸 합."""
+    return sum(int(m.group(1)) for l in pub_lines()[-10:] for m in [re.search(r'평가 (\d+)', l)] if m)
+
+
+USER_SIG = re.compile(r'MISS-U|UNDER|OVER|^FP|거절 메모|사용자')
+
+
+def promote(path):
+    """lessons.md → 승격 대상(관찰·거절 상태이고 관찰 수가 9절 임계 이상)과 임계 미달 제안."""
+    t = open(f'{W}/rules.md', encoding='utf-8').read() if os.path.exists(f'{W}/rules.md') else ''
+    m = re.search(r'같은 원인 코드의 관찰이 (\d+)회', t); thr = int(m.group(1)) if m else 2
+    m = re.search(r'불필요 평가\(FP\)는 (\d+)회', t); thr_fp = int(m.group(1)) if m else 2
+    m = re.search(r'자체 놓침 탐지\(MISS-P\)는 (\d+)회', t); thr_p = int(m.group(1)) if m else 3
+    zero = rated() == 0
+    up, low, wait = [], [], []
+    for l in (open(path, encoding='utf-8').read().splitlines() if os.path.exists(path) else []):
+        c = [x.strip() for x in l.split('|')]
+        if len(c) < 9 or not re.fullmatch(r'L\d+', c[0]) or not c[5].isdigit(): continue
+        lid, state, layer, code, n, ev = c[0], c[1], c[3], c[4], int(c[5]), c[6]
+        one = bool(re.match(r'MISS-U|UNDER|OVER', code)) or ev.startswith('거절 메모')
+        selfp = code.startswith('MISS-P')  # 자체 놓침 탐지: 오판을 거르려 임계를 높이되 평가 0이어도 대응
+        need = thr_fp if code.startswith('FP') else thr_p if selfp else 1 if one else thr
+        if state.startswith('제안') and n < need: low.append(f'{lid} {state} 관찰 {n}회 < 임계 {need}')
+        if state not in ('관찰', '거절') or n < need: continue
+        if zero and layer == 'judge' and not (one or selfp or USER_SIG.search(code) or USER_SIG.search(ev)):
+            wait.append(f'{lid} {code} 관찰 {n}회 (평가 0: judge 자기 탐지만으로 대응하지 않음)'); continue
+        up.append(f'{lid} | {layer} | {code} | 관찰 {n}회(임계 {need}) | 사용자 근거 {"있음" if one or USER_SIG.search(ev) else "없음"}')
+    print(f'승격 대상 {len(up)}건 (9절 대응 우선순위·회차당 상한으로 고름):'); [print('  ' + x) for x in up]
+    if wait: print('대기:'); [print('  ' + x) for x in wait]
+    if low: print('임계 미달 제안(점검, 오류에 적음):'); [print('  ' + x) for x in low]
 
 
 def reapply_assets():
@@ -1612,11 +1723,16 @@ if __name__ == '__main__':
     elif a[0] == 'trim': trim(a[1])
     elif a[0] == 'failpush': failpush(a[1])
     elif a[0] == 'seen': seen_cmd(a[1:])
+    elif a[0] == 'ledger': ledger(a[1], a[2] if len(a) > 2 else None)
     elif a[0] == 'probe': probe()
     elif a[0] == 'board': board(a[1], 'nodeliver' not in a[2:])
     elif a[0] == 'guard': guard(a[1], a[2])
     elif a[0] == 'decide': decide(a[1])
-    elif a[0] == 'patch': patch_cmd(a[1] if len(a) > 1 else 'main')
+    elif a[0] == 'patch':
+        k = '--keep' in a; r = [x for x in a[1:] if x != '--keep']
+        patch_cmd(r[0] if r else 'main', k, r[1] if k and len(r) > 1 else None)
+    elif a[0] == 'promote': promote(a[1] if len(a) > 1 else f'{W}/lessons.md')
+    elif a[0] == 'rated': print(rated())
     elif a[0] == 'feedback': feedback(a[1], a[2] if len(a) > 2 else '')
     elif a[0] == 'trace': trace(a[1], a[2:])
     elif a[0] in ('scorecard', 'yield'): scorecard(a[1])
