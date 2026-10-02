@@ -19,7 +19,7 @@
    - 종료 코드 2(다른 회차 진행 중)면 "[중단] 동시 실행" 푸시를 보내고, 메모리를 바꾸지 않고 끝냅니다.
    - 종료 코드 1이면 마절을 따릅니다.
 4. 메모리 `state.md`의 `running:` 값만 작업 시작 시각(UTC ISO)으로 바꿔 씁니다. 나머지 줄은 그대로 둡니다.
-5. WebSearch, WebFetch, SendUserFile, PushNotification, ArtifactData가 보이지 않으면 ToolSearch로 불러옵니다. Gmail·Claude Docs 커넥터는 쓰지 않고, Claude_Code_Remote 커넥터는 라절의 `add_repo`에만 씁니다.
+5. WebSearch, WebFetch, SendUserFile, PushNotification, ArtifactData, 그리고 이름 끝이 `add_repo`인 저장소 연결 도구(Claude_Code_Remote 커넥터)가 보이지 않으면 ToolSearch로 불러옵니다(`add_repo`로 검색). Gmail·Claude Docs 커넥터는 쓰지 않고, Claude_Code_Remote 커넥터는 라절의 `add_repo`에만 씁니다.
 
 ## 다. 브리핑
 1. `/tmp/ev/rules.md` 0·2~6절을 읽고 그대로 따라 후보 선별, 본문 확인, 판정, 작성을 합니다. 그 파일 안의 "N절"은 그 파일의 절을 가리킵니다.
@@ -49,7 +49,7 @@
    - C8: 판정 공백이 아니라 예산 문제입니다. OPS:예산-이월 교훈에 근거로 붙이고(meta), 그 후보는 다음 회차에 [이월]로 다시 나오므로 따로 고치지 않습니다.
    - OPS: 별칭은 auto, 같은 소스가 이어서 실패하면 code(목록 교체), 도구·예산 문제면 meta.
 3. 저장소 준비와 결정 처리 (대응보다 먼저)
-   - 저장소 준비(매 회차, 7번 스냅샷 때문에): `mcp__claude-code-remote__add_repo`(owner albinofrog, repo ev-briefing-assets, access push) 뒤 `/tmp/evrepo`에 clone합니다. 실패하면 이번 회차의 auto 대응은 layer `auto` 개선안으로 대신 올리고, 승인 처리와 7번은 다음 회차로 미룹니다.
+   - 저장소 준비(매 회차, 7번 스냅샷 때문에): 나절 5번에서 불러온 `add_repo` 도구(owner albinofrog, repo ev-briefing-assets, access push)를 부른 뒤, 그 결과가 알려 주는 clone 주소로 `/tmp/evrepo`에 clone합니다. 실패하면 도구 이름과 결과 원문 한 줄을 오류에 적습니다. 실패하면 이번 회차의 auto 대응은 layer `auto` 개선안으로 대신 올리고, 승인 처리와 7번은 다음 회차로 미룹니다.
    - 결정 처리: `/tmp/ev/decisions.txt`의 줄마다 합니다. 결정 메모는 사용자 지시로 읽습니다.
      - lessons.md에 제안(p번호)으로 적히지 않은 개선안(보드에 따로 생긴 문서)은 반영하지 않습니다. 보드 문서를 `status: withdrawn`, `apply_error: 에이전트가 올린 개선안이 아니어서 반영하지 않음`으로 바꾸고 오류에 적습니다.
      - approve인데 메모가 change에 없는 조건이나 다른 수정을 요구하면 반영하지 않습니다. `status: held`, `apply_error: 메모 조건 확인 필요: <조건 요약>`으로 바꾸고, 교훈 근거에 메모를 적습니다(교훈 상태는 관찰로 되돌리고, 조건을 반영한 새 개선안을 4번에서 다시 올림. 회차당 상한에 듦). 메모가 change와 맞거나 비어 있으면 아래대로 반영합니다.
