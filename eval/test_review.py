@@ -18,6 +18,8 @@ def jlp(p, rows): open(p, 'w').write(''.join(json.dumps(r, ensure_ascii=False) +
 def board(W, d, props):
     os.makedirs(f'{W}/{d}/proposals', exist_ok=True)
     for pid, st in props.items(): json.dump({'id': pid, 'data': {'status': st}}, open(f'{W}/{d}/proposals/{pid}.json', 'w'))
+import datetime as _dt
+DAY = lambda k: (_dt.datetime.now(_dt.timezone(_dt.timedelta(hours=9))) - _dt.timedelta(days=k)).strftime('%Y-%m-%d')  # 장부 보관 기준(최근 10일)에 걸리지 않게 오늘 기준 날짜
 fails = 0
 def check(name, cond, out=''):
     global fails
@@ -135,12 +137,12 @@ check('C 기존 적용분 재적용은 유지', 'KEEP p3 ok' in o, o)
 
 # B. 장부 합치기
 W = setup()
-mem = ('2026-09-28 | 1 | u:aaa | - | NIO Power / 지분매각 / 30%\n'
-       '2026-09-29 | 1 | u:bbb | - | -\n'
+mem = (f'{DAY(4)} | 1 | u:aaa | - | NIO Power / 지분매각 / 30%\n'
+       f'{DAY(3)} | 1 | u:bbb | - | -\n'
        'issue 헤더 같은 잡줄\n')
 open(f'{W}/sent.md', 'w').write(mem)
 os.makedirs(f'{W}/led/ledger')
-for i, l in enumerate(['2026-09-29 | 1 | u:bbb | - | Stellantis N.V. / 중단 / 1주', '2026-09-30 | 3 | u:ccc | - | Carfax / 집계 / -']):
+for i, l in enumerate([f'{DAY(3)} | 1 | u:bbb | - | Stellantis N.V. / 중단 / 1주', f'{DAY(2)} | 3 | u:ccc | - | Carfax / 집계 / -']):
     json.dump({'id': f'l{i}', 'data': {'line': l}}, open(f'{W}/led/ledger/l{i}.json', 'w'), ensure_ascii=False)
 c, o = run(W, 'ledger', 'merge', f'{W}/led')
 s = open(f'{W}/sent.md').read()
@@ -171,9 +173,23 @@ rows = b.read_sent()
 check('B read_sent 호환', isinstance(rows, list) and len(rows) == 3, rows)
 
 W = setup()
-open(f'{W}/sent.md', 'w').write('2026-09-28 | 1 | - | - | NIO Power / 지분매각 / 30% | x\n2026-09-29 | 1 | - | - | ACEA / 발표 / 306GWh | y\n')
+open(f'{W}/sent.md', 'w').write(f'{DAY(4)} | 1 | - | - | NIO Power / 지분매각 / 30% | x\n{DAY(3)} | 1 | - | - | ACEA / 발표 / 306GWh | y\n')
 c, o = run(W, 'ledger', 'merge')
 check('B URL 칸이 -인 줄끼리 합쳐지지 않음', open(f'{W}/sent.md').read().count('\n') == 2, o)
+
+W = setup()
+open(f'{W}/sent.md', 'w').write(f'{DAY(30)} | 1 | u:old1 | - | Old Corp / 발표 / -\n{DAY(1)} | 1 | u:new1 | - | New Corp / 발표 / -\n')
+os.makedirs(f'{W}/led/ledger')
+json.dump({'data': {'line': f'{DAY(40)} | 1 | u:old2 | - | Older Corp / 발표 / -'}}, open(f'{W}/led/ledger/a.json', 'w'))
+json.dump({'data': {'line': f'{DAY(2)} | 1 | u:new2 | - | Newer Corp / 발표 / -'}}, open(f'{W}/led/ledger/b.json', 'w'))
+c, o = run(W, 'ledger', 'merge', f'{W}/led'); s = open(f'{W}/sent.md').read()
+check('B 보관 기준(10일) 밖 줄은 메모리·보드 모두 제외', 'u:new1' in s and 'u:new2' in s and 'u:old1' not in s and 'u:old2' not in s and '2줄 제외' in o, s + o)
+# 보드 장부가 커져도 합친 장부는 15KB 안내 조건을 넘지 않음(10일 넘은 줄)
+W = setup(); os.makedirs(f'{W}/led/ledger'); open(f'{W}/sent.md', 'w').write('')
+for i in range(200):
+    json.dump({'data': {'line': f'{DAY(11 + i % 60)} | 1 | u:{i:012x} | - | Example Corp / 발표 / 1만대 | 예시 사건 제목 한 줄 정도의 길이'}}, open(f'{W}/led/ledger/l{i}.json', 'w'), ensure_ascii=False)
+c, o = run(W, 'ledger', 'merge', f'{W}/led')
+check('B 오래된 보드 장부 200줄은 합친 장부에 남지 않음', os.path.getsize(f'{W}/sent.md') < 15000, o)
 
 # F(되돌림). probe는 평가와 관계없이 4개
 W = setup()
@@ -213,6 +229,10 @@ check('MISS-P C1 3회 auto 승격', 'L2 | auto | MISS-P:C1 | 관찰 3회(임계 
 check('MISS-P C5 3회는 평가 0이어도 judge 승격', 'L3 | judge | MISS-P:C5' in up, o)
 check('자체 판정(C5) judge는 평가 0이면 대기', 'L4 C5' in o.split('대기:')[1] if '대기:' in o else False, o)
 check('사용자 제보 1회 승격 유지', 'L5 | judge | MISS-U:C5 | 관찰 1회(임계 1)' in up, o)
+open(f'{W}/lessons.md', 'w').write('L7 | 관찰 | 운영 | code | OPS:z | 2회 | 근거 | 대응 | 1\nL6 | 관찰 | 운영 | code | OPS:w | 관찰 3회 | 근거 | 대응 | 1\nL5 | 관찰 | 운영 | code | OPS:v | - | 근거 | 대응 | 1\n')
+c, o7 = run(W, 'promote')
+check('관찰 수 "2회"·"관찰 3회" 표기도 읽음', 'L7 | code | OPS:z | 관찰 2회' in o7 and 'L6 | code | OPS:w | 관찰 3회' in o7, o7)
+check('관찰 수를 못 읽는 줄은 형식 오류로 출력', '형식 오류' in o7 and 'L5 관찰 수 칸' in o7, o7)
 check('일반 임계 2 유지', 'L6 | code | OPS:x | 관찰 2회(임계 2)' in up, o)
 t = open(B, encoding='utf-8').read(); p = open(f'{REPO}/prompt.md', encoding='utf-8').read()
 check('푸시·리포트 제보 안내', "' | 제보·평가 {bu}'" in t and '놓친 기사 URL 제보' in t and '놓친 기사는 보드에 URL 제보' in p and '보드 평가 필요' not in p)

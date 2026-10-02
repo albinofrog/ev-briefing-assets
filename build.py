@@ -1078,21 +1078,24 @@ def ledger(cmd, arg=None):
         return
     mem = open(p, encoding='utf-8').read() if os.path.exists(p) else ''
     mem_failed = mem.strip() == 'READ_FAILED'
-    rows = {}
+    lim = (dt.datetime.now(KST) - dt.timedelta(days=KEEP_DAYS)).strftime('%Y-%m-%d')  # trim sent와 같은 보관 기준(보드 장부는 줄이지 않으므로 여기서 거름)
+    rows, old_n = {}, 0
     for l in ([] if mem_failed else mem.splitlines()):
         k = ledger_key(l)
+        if k and l[:10] < lim: old_n += 1; continue
         if k: rows[k] = l.strip()
     nb, board_ok = 0, bool(arg) and os.path.isdir(f'{arg}/ledger')
     for o in (doc_rows(arg, 'ledger') if board_ok else []):
         l = (o.get('line') or '').strip(); k = ledger_key(l)
         if not k: continue
+        if l[:10] < lim: old_n += 1; continue
         nb += 1
         old = rows.get(k)  # 메모리 줄이 거부 대체(사건 키 '-')면 보드 줄을 씀
         if old is None or old.split(' | ')[4].strip() == '-': rows[k] = l
     if mem_failed and not board_ok:
         print('장부: 메모리 읽기 실패, 보드 없음 → READ_FAILED 유지'); return
     open(p, 'w', encoding='utf-8').write(''.join(l + '\n' for l in rows.values()))
-    print(f"장부: 메모리 {'읽기 실패' if mem_failed else '있음'}, 보드 {nb if board_ok else '없음'}건 → {p} {len(rows)}줄")
+    print(f"장부: 메모리 {'읽기 실패' if mem_failed else '있음'}, 보드 {nb if board_ok else '없음'}건 → {p} {len(rows)}줄 ({lim} 이전 {old_n}줄 제외)")
 
 
 def failpush(stage):
@@ -1687,11 +1690,13 @@ def promote(path):
     m = re.search(r'불필요 평가\(FP\)는 (\d+)회', t); thr_fp = int(m.group(1)) if m else 2
     m = re.search(r'자체 놓침 탐지\(MISS-P\)는 (\d+)회', t); thr_p = int(m.group(1)) if m else 3
     zero = rated() == 0
-    up, low, wait = [], [], []
+    up, low, wait, bad = [], [], [], []
     for l in (open(path, encoding='utf-8').read().splitlines() if os.path.exists(path) else []):
         c = [x.strip() for x in l.split('|')]
-        if len(c) < 9 or not re.fullmatch(r'L\d+', c[0]) or not c[5].isdigit(): continue
-        lid, state, layer, code, n, ev = c[0], c[1], c[3], c[4], int(c[5]), c[6]
+        if len(c) < 9 or not re.fullmatch(r'L\d+', c[0]): continue
+        m = re.search(r'\d+', c[5])  # '2', '2회', '관찰 2회' 모두 읽음
+        if not m: bad.append(f'{c[0]} 관찰 수 칸 "{c[5][:20]}"'); continue
+        lid, state, layer, code, n, ev = c[0], c[1], c[3], c[4], int(m.group()), c[6]
         one = bool(re.match(r'MISS-U|UNDER|OVER', code)) or ev.startswith('거절 메모')
         selfp = code.startswith('MISS-P')  # 자체 놓침 탐지: 오판을 거르려 임계를 높이되 평가 0이어도 대응
         need = thr_fp if code.startswith('FP') else thr_p if selfp else 1 if one else thr
@@ -1703,6 +1708,7 @@ def promote(path):
     print(f'승격 대상 {len(up)}건 (9절 대응 우선순위·회차당 상한으로 고름):'); [print('  ' + x) for x in up]
     if wait: print('대기:'); [print('  ' + x) for x in wait]
     if low: print('임계 미달 제안(점검, 오류에 적음):'); [print('  ' + x) for x in low]
+    if bad: print('형식 오류(관찰 수를 못 읽음, 오류에 적고 고침):'); [print('  ' + x) for x in bad]
 
 
 def reapply_assets():
