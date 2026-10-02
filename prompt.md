@@ -48,7 +48,7 @@
    - C5, C6, FP, OVER, UNDER: judge. 사용자 메모가 있으면 그 이유를 근거에 그대로 적습니다.
    - C8: 판정 공백이 아니라 예산 문제입니다. OPS:예산-이월 교훈에 근거로 붙이고(meta), 그 후보는 다음 회차에 [이월]로 다시 나오므로 따로 고치지 않습니다.
    - OPS: 별칭은 auto, 같은 소스가 이어서 실패하면 code(목록 교체), 도구·예산 문제면 meta.
-3. 대응: 관찰 횟수가 9절 승격 임계에 닿은 교훈만, 9절 회차당 상한 안에서 처리합니다. 거절된 교훈은 거절 뒤 관찰이 임계만큼 새로 쌓여야 다시 올립니다.
+3. 대응: 관찰 횟수가 9절 승격 임계에 닿은 교훈만, 9절 회차당 상한 안에서 처리합니다. 임계에 닿은 교훈이 상한보다 많으면 사용자 평가·제보·메모에서 나온 것, 관찰 횟수가 많은 것 순으로 고르고 나머지는 다음 회차로 넘깁니다. 거절된 교훈은 거절 뒤 관찰이 임계만큼 새로 쌓여야 다시 올립니다.
    - 저장소 준비(매 회차, 7번 스냅샷 때문에): `mcp__claude-code-remote__add_repo`(owner albinofrog, repo ev-briefing-assets, access push) 뒤 `/tmp/evrepo`에 clone합니다. 실패하면 이번 회차의 auto 대응은 layer `auto` 개선안으로 대신 올리고, 승인 처리와 7번은 다음 회차로 미룹니다.
    - auto: 저장소에서 고친 뒤 게이트가 종료 0이면 `auto(L번호): 내용` 메시지로 커밋해 main에 푸시합니다. 종료 1이면 되돌리고 개선안으로 올립니다. 교훈 상태를 자동반영으로 바꾸고 관찰 지표 칸에 9절 철회 조건을 적습니다.
    - 승인 계층: `/tmp/ev/proposals_new.json`에 `[{"id": "p번호(보드의 마지막 번호 다음)", "title", "layer", "evidence", "change", "effect"}]`로 씁니다. evidence는 근거 사례(호·URL·사용자 메모), change는 rules.md 문구의 고치기 전·후나 코드 변경 요지, effect는 기대 효과와 확인할 지표입니다. 가.3의 고정 항목을 바꾸는 안은 layer `prompt`로만 냅니다. rules.md를 9절 크기 상한 넘게 키우는 안은 같은 크기 이상을 줄이는 통합안을 함께 냅니다. 교훈 상태를 제안(p번호)으로 바꿉니다.
@@ -60,8 +60,8 @@
    - reject: `status: rejected`, 교훈 상태는 거절. 메모에 다른 해법이 있으면 그 메모를 근거로 새 교훈(관찰 1회)을 만듭니다(9절에 따라 1회로 승격).
 5. 검증과 철회: 상태가 자동반영·반영인 교훈마다 관찰 지표를 봅니다. 자동 추가한 검색어는 시작 회차부터 10회차가 지났고, yield 출력에서 최근 10회 기여 0이며, status의 새 항목이 있었던 경우에만 커밋을 되돌려 푸시하고 철회로 바꿉니다. 반영한 judge 규칙 뒤로 5회차 안에 같은 원인 코드가 2회 이상 다시 나오거나, 그 규칙으로 실린 항목에 FP·OVER 평가가 2건 이상이면 되돌리는 개선안을 올립니다.
 6. 메타 점검: metrics.md 줄 수(이번 줄 포함)가 5의 배수면 rules.md 9절 메타 점검을 하고, lessons.md에서 철회·거절·반영 뒤 20회차 넘은 줄을 한 줄 요약으로 합칩니다.
-7. 평가 세트 확장(저장소를 준비했으면 매 회차): `python3 /tmp/ev/build.py snapshot /tmp/ev/snap/s<호>`로 이번 회차 입력을 `snapshots` 브랜치의 `s<호>/`에 커밋해 두고 최근 10개만 남깁니다(브랜치가 없으면 만듦, 같은 이름이 있고 내용이 같으면 건너뜀). <호>는 render가 매긴 이번 호 번호를 세 자리로 씁니다(발행이 없으면 직전 호 번호 뒤에 `-날짜`). 메모리 `gold.md`에 정답이 5줄 이상 쌓인 호가 있고 그 스냅샷이 브랜치에 있으며 `snap_week`가 이번 주가 아니면, 그 스냅샷을 main의 `eval/snapshot-s<호>/`로 옮기고 `build.py cases`로 `eval/cases-s<호>.json`을 만들어 커밋합니다. `snap_week`를 이번 주(ISO 주, 예: `2026-W40`)로 바꿉니다.
-8. 기록: `python3 /tmp/ev/build.py board /tmp/ev/briefing.json`(다절 5번 전달에 실패했으면 끝에 `nodeliver`) 결과를 ArtifactData `batch`로 보드에 씁니다(50건씩). 메모리에 `gold.txt`를 `gold.md`에 반영하고(같은 해시 줄은 새 줄로 교체), `metrics_line.txt`를 `metrics.md`에 append하고, `lessons.md`를 갱신하고, 보드를 읽었으면 `config.md`의 `fb_seen`을 feedback 출력의 다음 값으로 바꿉니다. 각 파일이 30KB를 넘으면 오래된 줄을 한 줄 요약으로 합칩니다.
+7. 평가 세트 확장(저장소를 준비했으면 매 회차): `python3 /tmp/ev/build.py snapshot /tmp/ev/snap/s<호>`로 이번 회차 입력을 `snapshots` 브랜치의 `s<호>/`에 커밋해 두고 최근 10개만 남깁니다(브랜치가 없으면 만듦, 같은 이름이 있고 내용이 같으면 건너뜀). <호>는 render가 매긴 이번 호 번호를 세 자리로 씁니다(발행이 없으면 직전 호 번호 뒤에 `-날짜`). 메모리 `gold.md`에 정답이 5줄 이상 쌓인 호가 있고 그 스냅샷이 브랜치에 있으며 `snap_week`가 이번 주가 아니면, 그 스냅샷을 main의 `eval/snapshot-s<호>/`로 옮기고 `python3 /tmp/ev/build.py cases <스냅샷 폴더> /tmp/ev/gold_all.md eval/cases-s<호>.json`(gold_all.md는 메모리 gold.md를 저장한 파일)으로 문항을 만들어 커밋합니다. `snap_week`를 이번 주(ISO 주, 예: `2026-W40`)로 바꿉니다.
+8. 기록: `python3 /tmp/ev/build.py board /tmp/ev/briefing.json`(다절 5번 전달에 실패했으면 끝에 `nodeliver`) 결과를 ArtifactData `batch`로 보드에 씁니다(50건씩). 메모리에 `gold.txt`를 `gold.md`에 반영하고(같은 해시 줄은 새 줄로 교체), `metrics_line.txt`를 `metrics.md`에 append하고, `lessons.md`를 갱신하고, 보드를 읽었으면 `config.md`의 `fb_seen`을 feedback 출력의 다음 값으로 바꿉니다. 각 파일이 30KB를 넘으면 오래된 줄을 한 줄 요약으로 합칩니다. 라절에서 오류가 있었으면 메모리 `run_log.md`에 `개선 오류: <요약>` 한 줄을 append합니다.
 
 ## 마. 마무리와 실패 처리
 1. 세션의 마지막 메시지에는 푸시 문구, run_log 블록, prep 경고, 이번 회차 개선 요약(새 신호 수와 원인 코드, 자동 반영·철회, 새 개선안과 보드 대기 건수, 처리한 결정, 실패한 개선 단계)을 남깁니다.
