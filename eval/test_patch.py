@@ -131,7 +131,7 @@ check('patch --keep(--auto 없음): 새 승인분 처리 안 함', 'OK ' not in 
 shutil.copy(f'{REPO}/rules.md', f'{T}/w/rules.md')
 code, out = run('guard', f'{REPO}/rules.md', f'{T}/w/rules.md')
 check('guard: 현재 rules.md 통과', code == 0 and '크기' in out, out)
-open(f'{T}/w/rules_big.md', 'w', encoding='utf-8').write(rd('rules.md') + '\n' + 'x' * 600)
+open(f'{T}/w/rules_big.md', 'w', encoding='utf-8').write(rd('rules.md') + '\n' + 'x' * (22528 - len(rd('rules.md').encode()) + 100))  # 현재 크기와 관계없이 상한을 넘김
 code, out = run('guard', f'{REPO}/rules.md', f'{T}/w/rules_big.md')
 check('guard: 크기 상한 초과 실패', code == 1 and '크기 상한 초과' in out, out)
 
