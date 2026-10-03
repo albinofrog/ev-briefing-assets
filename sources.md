@@ -1,6 +1,6 @@
 # EV 시장·정책 브리핑 수집 목록
 
-GitHub Actions의 collect.py가 매시간 이 파일(A·B·E절)과 watchlist.md를 읽어 data 브랜치의 items.jsonl에 새 항목을 쌓습니다. 주제 검색은 구글 뉴스가 주 경로이고 Bing은 예비입니다. 판정 규칙은 rules.md에, 표적 검색어는 watchlist.md에 있습니다.
+GitHub Actions의 collect.py가 매시간 예약으로(예약이 자주 건너뛰어 실제 간격은 4~7시간) 이 파일(A·B·E절)과 watchlist.md를 읽어 data 브랜치의 items.jsonl에 새 항목을 쌓습니다. 주제 검색은 구글 뉴스가 주 경로이고 Bing은 예비입니다. 판정 규칙은 rules.md에, 표적 검색어는 watchlist.md에 있습니다.
 
 ## A. 목록
 형식: `- 이름 | 권역 | 방식 | URL | 옵션`
@@ -18,16 +18,13 @@ GitHub Actions의 collect.py가 매시간 이 파일(A·B·E절)과 watchlist.md
 - electrive.net | EU | rss | https://www.electrive.net/feed/ | 전체
 - Handelsblatt 기업 | EU | rss | https://feeds.cms.handelsblatt.com/unternehmen |
 - Handelsblatt 정치 | EU | rss | https://feeds.cms.handelsblatt.com/politik |
-- Just Auto | EU | rss | https://www.just-auto.com/feed/ |
 - kfz-betrieb | EU | rss | https://www.kfz-betrieb.vogel.de/rss/news.xml |
 - Insurance Journal | 미국 | rss | https://www.insurancejournal.com/rss/news/national/ |
 - Electrek | 미국 | rss | https://electrek.co/feed/ | 전체
 - Repairer Driven News | 미국 | rss | https://www.repairerdrivennews.com/feed/ |
 - Auto Remarketing | 미국 | rss | https://www.autoremarketing.com/feed/ |
 - CBT News | 미국 | rss | https://www.cbtnews.com/feed/ |
-- GlobeNewswire 자동차 | 미국 | rss | https://www.globenewswire.com/RssFeed/industry/3000-Automobiles%20Parts/feedTitle/GlobeNewswire%20-%20Industry%20News%20on%20Automobiles%20Parts |
 - 미국 에너지부 | 미국 | html:/articles/ | https://www.energy.gov/newsroom |
-- NHTSA | 미국 | html:/press-releases/ | https://www.nhtsa.gov/press-releases |
 - 第一财经 | 중국 | html:/news/\d+\.html | https://www.yicai.com/news/ |
 - 盖世汽车 | 중국 | html:/news/\d{6}/ | https://auto.gasgoo.com/ | 전체
 - CnEVPost | 중국 | rss | https://cnevpost.com/feed/ | 전체
@@ -35,7 +32,6 @@ GitHub Actions의 collect.py가 매시간 이 파일(A·B·E절)과 watchlist.md
 - Response | 일본 | rss | https://response.jp/rss/index.rdf |
 - 日刊工業新聞 | 일본 | rss | https://www.nikkan.co.jp/rss/nksrdf.rdf |
 - 日刊自動車新聞 | 일본 | html:/archives/\d+ | https://www.netdenjd.com/ | 전체
-- eletric-vehicles.com(발견 전용, 리포트 URL로 쓰지 않음) | 미국 | rss | https://eletric-vehicles.com/feed/ | 전체
 
 ## B. 제목 필터 단어
 옵션이 비어 있는 목록은 제목에 아래 단어 중 하나가 있어야 수집합니다. 영문은 단어 경계로(단어 사이 공백은 하이픈도 허용), 나머지는 포함 여부로 봅니다(대소문자 무시).

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""EV 브리핑 목록 수집기. GitHub Actions가 매시간 실행합니다.
+"""EV 브리핑 목록 수집기. GitHub Actions가 매시간 예약으로 실행합니다(예약이 자주 건너뛰어 실제 간격은 4~7시간).
 
   python3 collect.py OUT_DIR
 

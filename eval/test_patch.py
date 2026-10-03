@@ -127,5 +127,22 @@ shutil.copy(f'{REPO}/watchlist.md', f'{T}/w/watchlist.md'); jl(f'{T}/w/patches.j
 code, out = run('patch', '--keep', REF)
 check('patch --keep(--auto 없음): 새 승인분 처리 안 함', 'OK ' not in out and 'Aviloo SoH' not in rd('watchlist.md'), out)
 
+# 7. guard 크기 상한(rules.md 9절): 상한 이하는 통과, 넘으면 실패
+shutil.copy(f'{REPO}/rules.md', f'{T}/w/rules.md')
+code, out = run('guard', f'{REPO}/rules.md', f'{T}/w/rules.md')
+check('guard: 현재 rules.md 통과', code == 0 and '크기' in out, out)
+open(f'{T}/w/rules_big.md', 'w', encoding='utf-8').write(rd('rules.md') + '\n' + 'x' * 600)
+code, out = run('guard', f'{REPO}/rules.md', f'{T}/w/rules_big.md')
+check('guard: 크기 상한 초과 실패', code == 1 and '크기 상한 초과' in out, out)
+
+# 8. 메모 없는 거절 교훈은 다시 승격하지 않음, 일반 거절은 새 관찰이 임계에 닿으면 승격
+open(f'{T}/w/lessons.md', 'w', encoding='utf-8').write(
+    'L1 | 거절(메모 없음) | 운영 | code | OPS:장기-수집실패 | 3 | 제007호 | 목록 교체 | 1\n'
+    'L2 | 거절 | 운영 | code | OPS:별칭 | 2 | 제007호 | 별칭 추가 | 1\n')
+code, out = run('promote', f'{T}/w/lessons.md')
+up = out.split('승격 대상')[1].split('대기:')[0].split('임계 미달')[0]
+check('promote: 메모 없는 거절은 승격 안 함(L1)', 'L1 ' not in up, out)
+check('promote: 일반 거절은 임계 도달 시 승격(L2)', 'L2 ' in up, out)
+
 print(f'\n{"전부 통과" if not fails else "실패 " + ", ".join(fails)}')
 sys.exit(1 if fails else 0)

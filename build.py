@@ -1520,8 +1520,13 @@ def guard(old, new):
         print('고정 줄 변경 감지(반영 불가):'); [print('  - ' + l[:100]) for l in a if l not in b]; [print('  + ' + l[:100]) for l in b if l not in a]
         sys.exit(1)
     print(f'고정 줄 {len(a)}개 그대로')
+    sz = os.path.getsize(new)
+    if sz > RULES_MAX:
+        print(f'크기 상한 초과: {sz}바이트 > {RULES_MAX}바이트(rules.md 9절, 같은 크기 이상을 줄이는 통합안 필요)'); sys.exit(1)
+    print(f'크기 {sz}바이트(상한 {RULES_MAX})')
 
 
+RULES_MAX = 22528  # rules.md 9절 크기 상한(22KB)
 PATCHABLE = ('rules.md', 'improve.md', 'build.py', 'sources.md', 'watchlist.md')
 
 
