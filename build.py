@@ -12,9 +12,12 @@
   python3 build.py ledger board [FILE]  장부 줄(기본 /tmp/ev/ledger.txt) → 보드 ledger 쓰기 목록(/tmp/ev/ledger_board.json)
 
   적용 중인 수정 재적용(준비 단계, prep 전):
+  python3 build.py decide DIR auto     승인된 auto 계층 개선안만 /tmp/ev/patches_new.jsonl로(준비 단계용)
   python3 build.py patch --keep REF [BOARD_DIR]   적용 중인 수정(/tmp/ev/patches.jsonl)만 재적용. BOARD_DIR(보드 proposals)을 읽었으면
                                    status가 applied가 아닌 개선안은 빼고, prompt 수정은 가절(고정 원칙)을 건드리면 뺌. 검사·회귀 없음
                                    → /tmp/ev/patches_keep.jsonl(메모리 patches.md). prep은 새로 받은 sources.md·watchlist.md에 다시 적용
+  python3 build.py patch --keep --auto REF [BOARD_DIR]   위에 더해 patches_new.jsonl(auto 승인분) 가운데 watchlist.md·sources.md만
+                                   고치는 것을 회귀 검사 뒤 이번 회차부터 적용. 통과분 p번호 → /tmp/ev/auto_applied.txt
 
   개선안 결정 반영(자가개선 단계, 전달 뒤. 통과분은 다음 회차부터 씀):
   python3 build.py decide DIR      보드 proposals·decisions → 처리할 결정(/tmp/ev/decisions.txt)·승인분 수정(/tmp/ev/patches_new.jsonl)
@@ -1582,13 +1585,15 @@ def gate(ref):
     return r.returncode == 0, '; '.join(fails[:3]) or (tail[-1] if tail else '출력 없음')
 
 
-def decide(d):
-    """보드 proposals·decisions(DIR/<컬렉션>/<id>.json) → 처리할 결정(decisions.txt)과 승인분 수정(patches_new.jsonl)."""
+def decide(d, layer=None):
+    """보드 proposals·decisions(DIR/<컬렉션>/<id>.json) → 처리할 결정(decisions.txt)과 승인분 수정(patches_new.jsonl).
+    layer를 주면 그 계층 개선안만(준비 단계의 auto 당일 적용)."""
     props = {p['_id']: p for p in doc_rows(d, 'proposals')}
     dec, new = [], []
     for x in doc_rows(d, 'decisions'):
         p = props.get(x['_id'])
         if not p or p.get('status') != 'pending' or x.get('decision') not in ('approve', 'reject'): continue
+        if layer and p.get('layer') != layer: continue
         ed = p.get('edits') or []
         ok = isinstance(ed, list) and bool(ed) and all(isinstance(e, dict) and e.get('file') in PATCHABLE + ('prompt',)
                                                        and (e.get('old') or '').strip() for e in ed)
@@ -1620,7 +1625,10 @@ def prompt_text(ref):
     return open(p, encoding='utf-8').read() if os.path.exists(p) else ''
 
 
-def patch_cmd(ref, keep_only=False, board_dir=None):
+AUTO_FILES = {'watchlist.md', 'sources.md'}
+
+
+def patch_cmd(ref, keep_only=False, board_dir=None, auto=False):
     """적용 중인 수정(patches.jsonl)을 파일 사본에 다시 적용하고, 새 승인분(patches_new.jsonl)은 고정 줄·문법·회귀 검사를 통과한 것만 더함.
     결과 patches_keep.jsonl(메모리 patches.md에 저장할 내용)."""
     for f in ('sources.md', 'watchlist.md'):
@@ -1643,8 +1651,11 @@ def patch_cmd(ref, keep_only=False, board_dir=None):
         out.append(f'CONFLICT {pid} {why}' if r == 'fail' else f'KEEP {pid} {r}')
         if any(e.get('file') == 'prompt' for e in ed): out.append(f'PROMPT {pid}')
     known = {e.get('id') for e in keep}
-    for pid, ed in ({} if keep_only else by_id(read_jsonl(f'{W}/patches_new.jsonl'))).items():
+    auto_ok = []
+    for pid, ed in ({} if keep_only and not auto else by_id(read_jsonl(f'{W}/patches_new.jsonl'))).items():
         if pid in known: out.append(f'SKIP {pid} 이미 적용 중'); continue
+        if auto and not {e.get('file') for e in ed} <= AUTO_FILES:
+            out.append(f'FAIL {pid} auto 당일 적용은 watchlist.md·sources.md만(라절이 다시 처리)'); continue
         bad = [why for e in ed if e.get('file') == 'prompt' for r0, why in [prompt_guard(e.get('old') or '', e.get('new') or '', ptxt)] if r0 == 'fail']
         if bad: out.append(f'FAIL {pid} {bad[0]}'); continue
         files = {e.get('file') for e in ed} - {'prompt'}
@@ -1667,12 +1678,13 @@ def patch_cmd(ref, keep_only=False, board_dir=None):
                 for p, t in back.items(): open(p, 'w', encoding='utf-8').write(t)
                 r = 'fail'
         if r == 'fail': out.append(f'FAIL {pid} {why}'); continue
-        keep += ed; live.add(pid)
+        keep += ed; live.add(pid); auto_ok.append(pid)
         out.append(f'OK {pid} {",".join(sorted(touched)) or "변경 없음"}')
         if any(e.get('file') == 'prompt' for e in ed): out.append(f'PROMPT {pid}')
     for f in ('patches_keep.jsonl',) + (('patches.jsonl',) if keep_only else ()):  # keep 모드는 뺀 개선안이 라절에 되살아나지 않게 patches.jsonl도 갱신
         with open(f'{W}/{f}', 'w', encoding='utf-8') as fh:
             for e in keep: fh.write(json.dumps(e, ensure_ascii=False) + '\n')
+    if auto: open(f'{W}/auto_applied.txt', 'w', encoding='utf-8').write(''.join(x + '\n' for x in auto_ok))
     for l in out: print(l)
     pr = [e for e in keep if e.get('file') == 'prompt']
     if pr:
@@ -1758,10 +1770,10 @@ if __name__ == '__main__':
     elif a[0] == 'probe': probe()
     elif a[0] == 'board': board(a[1], 'nodeliver' not in a[2:])
     elif a[0] == 'guard': guard(a[1], a[2])
-    elif a[0] == 'decide': decide(a[1])
+    elif a[0] == 'decide': decide(a[1], a[2] if len(a) > 2 else None)
     elif a[0] == 'patch':
-        k = '--keep' in a; r = [x for x in a[1:] if x != '--keep']
-        patch_cmd(r[0] if r else 'main', k, r[1] if k and len(r) > 1 else None)
+        k = '--keep' in a; au = '--auto' in a; r = [x for x in a[1:] if x not in ('--keep', '--auto')]
+        patch_cmd(r[0] if r else 'main', k, r[1] if k and len(r) > 1 else None, au)
     elif a[0] == 'promote': promote(a[1] if len(a) > 1 else f'{W}/lessons.md')
     elif a[0] == 'rated': print(rated())
     elif a[0] == 'feedback': feedback(a[1], a[2] if len(a) > 2 else '')

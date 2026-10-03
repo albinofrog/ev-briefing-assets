@@ -104,5 +104,28 @@ b = importlib.util.module_from_spec(spec); spec.loader.exec_module(b)
 b.reapply_assets()
 check('prep 재적용(sources·watchlist)', rd('watchlist.md').count('Aviloo SoH') == 1)
 
+# 6. 준비 단계 auto 당일 적용: auto 승인분만, watchlist·sources만, 통과분은 auto_applied.txt와 patches.jsonl에
+for f in ('build.py', 'rules.md', 'improve.md', 'sources.md', 'watchlist.md'):
+    shutil.copy(f'{REPO}/{f}', f'{T}/w/{f}')
+os.makedirs(f'{T}/fb2/proposals'); os.makedirs(f'{T}/fb2/decisions')
+A = {'p20': ('auto', [{'file': 'watchlist.md', 'old': wl_old, 'new': wl_old + '\n- Aviloo SoH | | !'}]),
+     'p21': ('judge', [{'file': 'rules.md', 'old': '- 목표값: 검토율=100', 'new': '- 목표값: 검토율=90'}]),
+     'p22': ('auto', [{'file': 'build.py', 'old': 'def prep():\n', 'new': 'def prep():\n    pass\n'}])}
+for k, (ly, ed) in A.items():
+    json.dump({'title': k, 'layer': ly, 'status': 'pending', 'edits': ed}, open(f'{T}/fb2/proposals/{k}.json', 'w'))
+    json.dump({'decision': 'approve', 'note': '', 'at': '2026-10-03T00:00:00Z'}, open(f'{T}/fb2/decisions/{k}.json', 'w'))
+code, out = run('decide', f'{T}/fb2', 'auto')
+check('decide auto: auto 계층만(p20·p22)', sorted({json.loads(l)['id'] for l in open(f'{T}/w/patches_new.jsonl', encoding='utf-8')}) == ['p20', 'p22'], out)
+jl(f'{T}/w/patches.jsonl', [])
+build0 = rd('build.py')
+code, out = run('patch', '--keep', '--auto', REF, f'{T}/fb2')
+check('patch --auto: watchlist 승인분 회귀 통과 후 적용(p20)', 'OK p20' in out and rd('watchlist.md').count('Aviloo SoH') == 1, out)
+check('patch --auto: build.py 수정은 넘김(p22)', 'FAIL p22 auto 당일 적용은' in out and rd('build.py') == build0, out)
+check('patch --auto: auto_applied.txt = p20', open(f'{T}/w/auto_applied.txt', encoding='utf-8').read() == 'p20\n')
+check('patch --auto: 다음 회차 재적용 목록에 p20', [json.loads(l)['id'] for l in open(f'{T}/w/patches.jsonl', encoding='utf-8')] == ['p20'])
+shutil.copy(f'{REPO}/watchlist.md', f'{T}/w/watchlist.md'); jl(f'{T}/w/patches.jsonl', [])
+code, out = run('patch', '--keep', REF)
+check('patch --keep(--auto 없음): 새 승인분 처리 안 함', 'OK ' not in out and 'Aviloo SoH' not in rd('watchlist.md'), out)
+
 print(f'\n{"전부 통과" if not fails else "실패 " + ", ".join(fails)}')
 sys.exit(1 if fails else 0)
