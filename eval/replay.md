@@ -10,10 +10,10 @@
 
 ## 절차
 
-1. 저장소 루트에서 `python3 eval/score.py --prep-only` → `/tmp/ev/candidates.md`, `/tmp/ev/sent.md` 준비
+1. 저장소 루트에서 `python3 eval/score.py --prep-only` → `/tmp/ev/candidates.md`, `/tmp/ev/sent.md` 준비. 보드에서 복원한 회차(chat_ops.md 4번)는 `--cases eval/cases_<호>.json`을 붙이며, 이때는 prep 없이 그 회차가 본 후보를 그대로 씁니다
 2. 실행 에이전트에게 아래 지시와 프롬프트 파일을 줍니다.
 3. 결과(briefing.json, decisions.tsv)를 `/tmp/ev` 밖(예: 작업 폴더의 `replay_<프롬프트판>.json`)에 복사합니다. 채점기가 `/tmp/ev`를 비우기 때문입니다. decisions.tsv는 실행 간 판정이 갈릴 때 원인을 찾는 데 씁니다.
-4. `python3 eval/score.py --briefing replay_<프롬프트판>.json`
+4. `python3 eval/score.py --briefing replay_<프롬프트판>.json`(복원 회차는 1번과 같은 `--cases`를 붙임)
 
 ## 실행 에이전트 지시문
 

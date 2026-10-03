@@ -144,5 +144,36 @@ up = out.split('승격 대상')[1].split('대기:')[0].split('임계 미달')[0]
 check('promote: 메모 없는 거절은 승격 안 함(L1)', 'L1 ' not in up, out)
 check('promote: 일반 거절은 임계 도달 시 승격(L2)', 'L2 ' in up, out)
 
+# 9. 회차 입력 저장(snapcap) → 보드 문서 → 복원(snaprestore) → score.py가 prep 없이 같은 후보로 준비
+import glob as _g
+S9 = f'{T}/s9'; os.makedirs(S9)
+sc = subprocess.run([sys.executable, f'{REPO}/eval/score.py', '--prep-only'], capture_output=True, text=True, env={**os.environ, 'EV_W': S9})
+check('snapcap 준비: 기본 스냅샷 prep', sc.returncode == 0 and os.path.exists(f'{S9}/prep.txt'), sc.stdout + sc.stderr)
+r9 = subprocess.run([sys.executable, f'{REPO}/build.py', 'snapcap'], capture_output=True, text=True, env={**os.environ, 'EV_W': S9})
+doc = json.load(open(f'{S9}/snap_doc.json', encoding='utf-8'))
+check('snapcap: 다섯 파일·호 번호·문서 id', r9.returncode == 0 and set(doc['files']) == {'candidates.md', 'cand_meta.json', 'sent.md', 'memstate.md', 'prep.txt'}
+      and doc['issue'] == 5 and open(f'{S9}/snap_id.txt').read().strip() == 's05', r9.stdout + r9.stderr)
+dst = f'{REPO}/eval/snapshot-zztest-005'
+try:
+    for form, body in (('감싼 형식', {'id': 's05', 'version': 3, 'data': doc}), ('평평한 형식', doc)):
+        shutil.rmtree(dst, ignore_errors=True)
+        json.dump(body, open(f'{T}/doc9.json', 'w', encoding='utf-8'), ensure_ascii=False)
+        r = subprocess.run([sys.executable, f'{REPO}/build.py', 'snaprestore', f'{T}/doc9.json', dst], capture_output=True, text=True)
+        check(f'snaprestore({form}): 후보 목록 그대로', r.returncode == 0 and open(f'{dst}/candidates.md', encoding='utf-8').read() == doc['files']['candidates.md'], r.stdout + r.stderr)
+    r = subprocess.run([sys.executable, f'{REPO}/build.py', 'snaprestore', f'{T}/doc9.json', f'{T}/snapshot-x-006'], capture_output=True, text=True)
+    check('snaprestore: 호 번호 다른 폴더 거부', r.returncode != 0 and '다름' in (r.stdout + r.stderr))
+    json.dump({'snapshot': 'snapshot-zztest-005', 'cases': []}, open(f'{T}/cases9.json', 'w'))
+    S9b = f'{T}/s9b'
+    r = subprocess.run([sys.executable, f'{REPO}/eval/score.py', '--prep-only', '--cases', f'{T}/cases9.json'], capture_output=True, text=True, env={**os.environ, 'EV_W': S9b})
+    check('score.py: 복원 스냅샷은 prep 없이 같은 후보', r.returncode == 0 and open(f'{S9b}/candidates.md', encoding='utf-8').read() == doc['files']['candidates.md']
+          and json.load(open(f'{S9b}/state.json'))['issue'] == 4 and os.path.exists(f'{S9b}/build.py'), r.stdout + r.stderr)
+finally:
+    shutil.rmtree(dst, ignore_errors=True)
+
+# 10. prep은 실패해도 출력을 prep.txt에 남김(평가 스냅샷과 재현 실행이 같은 출력을 봄)
+S10 = f'{T}/s10'; os.makedirs(S10)
+r = subprocess.run([sys.executable, f'{REPO}/build.py', 'prep'], capture_output=True, text=True, env={**os.environ, 'EV_W': S10})
+check('prep: 출력이 prep.txt에도 남음', os.path.exists(f'{S10}/prep.txt') and open(f'{S10}/prep.txt', encoding='utf-8').read().strip() != '', r.stdout + r.stderr)
+
 print(f'\n{"전부 통과" if not fails else "실패 " + ", ".join(fails)}')
 sys.exit(1 if fails else 0)

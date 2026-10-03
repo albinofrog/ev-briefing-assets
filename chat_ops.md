@@ -7,3 +7,8 @@
    build.py의 scorecard 지표 계산을 바꿨으면 메모리 `run_log.md`에 `지표 계산 변경: <바뀐 지표> <커밋> <날짜>` 한 줄을 append합니다.
 2. 반영한 개선안은 보드 `status: applied`, 메모리 `lessons.md`의 교훈 상태를 반영으로 바꾸고 관찰 지표 칸에 `반영 <metrics.md 줄 수>`를 덧붙입니다. 실패하면 되돌리고 `status: failed`, `apply_error: 사유 한 줄`.
 3. 사용자가 채팅에서 이 예약 작업의 수동 실행을 요청하면, 정식 회차로 낼 것인지 먼저 확인합니다. 확인용이면 메모리 `config.md`를 `dry: on`으로 바꾼 뒤 실행하고, 실행이 끝나면 `dry: off`로 되돌립니다(수동 확인 실행이 호 번호·장부·metrics.md를 움직이지 않게).
+4. 사용자가 채팅에서 평가 세트 갱신을 요청하면 사용자 평가(메모리 `gold.md`)를 그 회차가 실제로 본 입력과 묶어 판정 문항으로 만듭니다.
+   - 메모리 `gold.md`를 `/tmp/evg/gold.txt`로 저장합니다(헤더 줄 제외). 줄의 첫 칸이 호 번호입니다.
+   - 호마다 보드 `snapshots`의 `s<호를 20으로 나눈 나머지, 두 자리>` 문서를 ArtifactData `get`(out_dir `/tmp/evg/snap`)으로 받습니다. 문서의 `issue`가 그 호와 같을 때만 `python3 build.py snaprestore <받은 파일> eval/snapshot-<그 회차 시작일 YYYYMMDD>-<호 세 자리>`로 복원합니다. 다르면 이미 다른 회차가 덮어쓴 것이므로 그 호는 건너뛰고 사용자에게 알립니다.
+   - `python3 build.py cases eval/snapshot-<…> /tmp/evg/gold.txt eval/cases_<호 세 자리>.json`으로 판정 문항을 만듭니다.
+   - `eval/replay.md` 절차를 `--cases eval/cases_<호 세 자리>.json`으로 돌려 현재 규칙의 판정이 사용자 판정과 맞는지 채점하고, `eval/results/log.md`에 기록한 뒤 커밋합니다. 사용자 판정과 다른 문항은 고칠 규칙 후보로 사용자에게 보여 줍니다.

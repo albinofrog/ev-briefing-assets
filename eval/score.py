@@ -25,6 +25,14 @@ def load_build(path):
 def run_prep(b, snap, src):
     W = b.W
     shutil.rmtree(W, ignore_errors=True); os.makedirs(W)
+    if os.path.exists(f'{snap}/restored.json'):  # 보드에서 복원한 회차 입력(build.py snaprestore): prep 없이 그 회차가 본 후보 그대로 씀
+        r = json.load(open(f'{snap}/restored.json'))
+        for f in b.SNAP_FILES:
+            if os.path.exists(f'{snap}/{f}'): shutil.copy(f'{snap}/{f}', W)
+        json.dump({'start': r['start'], 'cutoff': r['cutoff'], 'issue': r['issue'] - 1}, open(f'{W}/state.json', 'w'))
+        for f in ('sources.md', 'template.html', 'watchlist.md'):
+            if os.path.exists(f'{src}/{f}'): shutil.copy(f'{src}/{f}', W)
+        return W
     shutil.copy(f'{snap}/memstate.md', W); shutil.copy(f'{snap}/sent.md', W)
     start = open(f'{snap}/start.txt').read().strip()
     cutoff = (dt.datetime.fromisoformat(start) - dt.timedelta(hours=b.FRESH_H)).isoformat()

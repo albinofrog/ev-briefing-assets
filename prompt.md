@@ -22,7 +22,7 @@
    - `state.md` → `/tmp/ev/memstate.md`(도구가 붙이는 `[updated…]` 헤더 줄은 빼고 본문만)
    - `metrics.md` → `/tmp/ev/metrics.md`(헤더 줄 제외, 없으면 빈 파일)
    - `sent.md`(이미 실은 사건 장부, 백업) → `/tmp/ev/sent.md`(헤더 줄은 빼고 본문만). 파일이 없으면 빈 파일로, 읽기 오류면 `READ_FAILED` 한 줄로 저장합니다. 그다음 ArtifactData로 보드 `ledger`를 `list`(limit 1000, out_dir `/tmp/ev/led`, next_cursor가 있으면 이어서)로 받고 `python3 /tmp/ev/build.py ledger merge /tmp/ev/led`로 합칩니다(보드를 못 읽었으면 `/tmp/ev/led` 없이 실행하고 오류에 적음). 둘 다 읽지 못해 `READ_FAILED`가 남으면 run_log나 기억으로 중복을 추정하지 않습니다.
-5. `python3 /tmp/ev/build.py prep`을 실행합니다. 작업 시작 시각, 수록 기준 시각, 후보 목록 `/tmp/ev/candidates.md`, 수집 실패 목록과 경고가 나옵니다.
+5. `python3 /tmp/ev/build.py prep`을 실행합니다. 작업 시작 시각, 수록 기준 시각, 후보 목록 `/tmp/ev/candidates.md`, 수집 실패 목록과 경고가 나옵니다. 정상 종료하면 이어서 `python3 /tmp/ev/build.py snapcap`으로 이번 회차 입력을 평가 세트용으로 묶습니다(실패해도 진행하고 오류에 적음).
    - 종료 코드 2(다른 회차 진행 중)면 "[중단] 동시 실행" 푸시를 보내고, 3번 기록 외에는 메모리를 바꾸지 않고 끝냅니다.
    - 종료 코드 1이면 마절 3번을 따릅니다.
 6. 메모리 `state.md`의 `running:` 값만 작업 시작 시각(UTC ISO)으로 바꿔 씁니다. 나머지 줄은 그대로 둡니다.
@@ -36,7 +36,7 @@
 5. `python3 /tmp/ev/build.py check /tmp/ev/briefing.json`을 실행해 오류를 모두 고칩니다. "제외"나 "ref"를 가리키는 오류는 그대로 따르고, "확인" 항목은 읽고 판단합니다. 같은 항목의 같은 오류가 세 번 반복되면 그 항목을 빼고 `errors`에 적습니다.
 6. `python3 /tmp/ev/build.py render /tmp/ev/briefing.json`을 실행하고, 1쪽 미리보기 이미지를 Read로 열어 글자가 깨지지 않았는지 봅니다.
 7. 수록이 있으면 render가 출력한 파일을 SendUserFile로 PDF, HTML 순서로 전달합니다. 파일이 HTML 하나뿐이면 그것만 전달합니다.
-8. 장부 기록: 7번 전달이 성공한 경우에만 합니다(수록 0건이면 건너뜀). 먼저 `python3 /tmp/ev/build.py ledger board`의 결과를 ArtifactData `batch`로 보드 `ledger`에 씁니다(주 장부). 그다음 백업으로 `/tmp/ev/ledger.txt`의 줄을 메모리 `sent.md`에 추가합니다. 파일이 없으면 `memory_write`(if_version `new`)로 만들고, 있으면 `memory_read` 후 `memory_append`로 추가하며, 한 번에 5줄 이하씩 씁니다. check가 "trim sent"를 안내했으면 추가하기 전에 `trim sent` 결과로 덮어씁니다. 추가한 뒤 다시 읽어 ledger.txt의 줄이 모두 있는지 확인합니다. 보드 쓰기가 성공했으면 메모리 줄 일부가 빠져도 장부 확인은 성공으로 보고 빠진 줄을 오류에 적습니다. 보드와 메모리 모두 실패한 경우만 장부 실패입니다.
+8. 장부 기록: 7번 전달이 성공한 경우에만 합니다(수록 0건이면 건너뜀). 먼저 `python3 /tmp/ev/build.py ledger board`의 결과를 ArtifactData `batch`로 보드 `ledger`에 씁니다(주 장부). 그다음 백업으로 `/tmp/ev/ledger.txt`의 줄을 메모리 `sent.md`에 추가합니다. 파일이 없으면 `memory_write`(if_version `new`)로 만들고, 있으면 `memory_read` 후 `memory_append`로 추가하며, 한 번에 5줄 이하씩 씁니다. check가 "trim sent"를 안내했으면 추가하기 전에 `trim sent` 결과로 덮어씁니다. 추가한 뒤 다시 읽어 ledger.txt의 줄이 모두 있는지 확인합니다. 보드 쓰기가 성공했으면 메모리 줄 일부가 빠져도 장부 확인은 성공으로 보고 빠진 줄을 오류에 적습니다. 보드와 메모리 모두 실패한 경우만 장부 실패입니다. 같은 조건에서 평가 세트용으로, `/tmp/ev/snap_id.txt`의 문서 id로 보드 `snapshots`를 `get`하고(없으면 새로 만듦) 그 version을 if_version으로 `/tmp/ev/snap_doc.json`을 `set`(file_path)합니다. 이 쓰기가 실패해도 오류에만 적습니다.
 9. 상태 기록: 7번 전달이 성공했거나 수록이 0건인 경우에만, 메모리 `state.md`를 `/tmp/ev/memstate_next.md` 내용으로 덮어씁니다. 전달에 실패했으면 8·9번을 하지 않습니다(다음 회차가 같은 후보를 다시 봄).
 10. `/tmp/ev/runlog_block.md`를 메모리 `run_log.md` 끝에 `memory_append`합니다. 전달·장부 실패가 있었으면 블록의 "오류:" 줄에 적습니다. run_log.md가 30KB를 넘으면 내용을 `/tmp/ev/run_log.md`에 저장하고 `trim log` 결과로 덮어씁니다.
 11. PushNotification으로 `/tmp/ev/push.txt` 내용을 보냅니다. 전달이나 장부 확인에 실패했으면 보내기 전에 `python3 /tmp/ev/build.py failpush 전달` 또는 `failpush 장부`를 실행합니다. 이 알림은 라절보다 먼저 보냅니다. `improve`가 off가 아니고 `python3 /tmp/ev/build.py rated`가 0을 출력하면 문구 끝에 ` | 놓친 기사는 보드에 URL 제보`를 붙입니다.

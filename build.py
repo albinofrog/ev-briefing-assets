@@ -35,6 +35,8 @@
   python3 build.py coverage        검색 주제(추적 검색어 절·권역)별 수집·후보·검토·수록 현황과 주제 공백(/tmp/ev/coverage.json)
   python3 build.py scorecard FILE  세 목표 점수표·지표 한 줄(/tmp/ev/metrics_line.txt)·출처별 최근 10회 기여(/tmp/ev/metrics.md 이력 사용)
   python3 build.py snapshot DIR    이번 회차 입력을 평가 세트 스냅샷으로 저장(수록 기준 8일 전 이후 항목만)
+  python3 build.py snapcap         prep 직후 이번 회차 입력(후보·메타·장부·상태·prep 출력)을 /tmp/ev/snap_doc.json으로 묶고 보드 snapshots 문서 id 출력
+  python3 build.py snaprestore FILE DIR   보드 snapshots 문서(FILE)를 평가 스냅샷 폴더(DIR, 이름 끝에 호 번호)로 복원
   python3 build.py cases SNAPDIR GOLD OUT   정답 줄(GOLD)을 그 스냅샷의 판정 문항 파일(OUT)로 변환
 
 작업 폴더 /tmp/ev, 산출물 /mnt/user-data/outputs.
@@ -1493,6 +1495,36 @@ def snapshot(dst):
     print(f'{dst}: 항목 {n}건, 작업 시작 {st["start"]}, 회차 {st["issue"] + 1}')
 
 
+SNAP_FILES = ('candidates.md', 'cand_meta.json', 'sent.md', 'memstate.md', 'prep.txt')
+SNAP_SLOTS = 20  # 보드 snapshots 문서 수(호 번호를 돌려 씀, 평일 약 4주)
+
+
+def snapcap():
+    """prep 직후: 이번 회차가 실제로 본 입력을 보드 snapshots 한 문서로 묶음(평가 세트용, 발행 회차만 보드에 씀)."""
+    st = now_state(); iss = st['issue'] + 1
+    files = {f: open(f'{W}/{f}', encoding='utf-8').read() for f in SNAP_FILES if os.path.exists(f'{W}/{f}')}
+    doc = {'issue': iss, 'start': st['start'], 'cutoff': st['cutoff'], 'files': files}
+    json.dump(doc, open(f'{W}/snap_doc.json', 'w', encoding='utf-8'), ensure_ascii=False)
+    did = f's{iss % SNAP_SLOTS:02d}'
+    open(f'{W}/snap_id.txt', 'w').write(did + '\n')
+    print(f'보드 snapshots/{did} ← {W}/snap_doc.json (제{iss:03d}호, {os.path.getsize(f"{W}/snap_doc.json")}바이트, 빠진 파일: {", ".join(f for f in SNAP_FILES if f not in files) or "없음"})')
+
+
+def snaprestore(src, dst):
+    """보드 snapshots 문서(ArtifactData get/list가 저장한 JSON)를 eval 스냅샷 폴더로 복원. score.py는 candidates.md가 있으면 prep 없이 씀."""
+    o = json.load(open(src, encoding='utf-8'))
+    if isinstance(o.get('data'), dict): o = o['data']
+    m = re.search(r'(\d+)$', os.path.basename(dst.rstrip('/')))
+    if not m or int(m.group(1)) != int(o['issue']):
+        sys.exit(f'폴더 이름 끝 번호가 문서의 호({o["issue"]})와 다름: {dst}')
+    os.makedirs(dst, exist_ok=True)
+    for f, t in o['files'].items():
+        if f in SNAP_FILES: open(f'{dst}/{f}', 'w', encoding='utf-8').write(t)
+    open(f'{dst}/start.txt', 'w').write(o['start'] + '\n')
+    json.dump({'issue': o['issue'], 'start': o['start'], 'cutoff': o['cutoff']}, open(f'{dst}/restored.json', 'w'))
+    print(f'{dst}: 제{int(o["issue"]):03d}호 입력 복원({", ".join(sorted(o["files"]))})')
+
+
 def cases(snapdir, gold, out):
     name = os.path.basename(snapdir.rstrip('/'))
     m = re.search(r'(\d+)$', name); iss = m.group(1).lstrip('0') if m else None
@@ -1764,7 +1796,21 @@ def reapply_assets():
 if __name__ == '__main__':
     a = sys.argv[1:]
     if not a: sys.exit(__doc__)
-    if a[0] == 'prep': prep()
+    if a[0] == 'prep':  # 출력은 화면과 W/prep.txt(평가 스냅샷용) 둘 다
+        buf = io.StringIO()
+        class _Tee:
+            def write(self, s): sys.__stdout__.write(s); buf.write(s)
+            def flush(self): sys.__stdout__.flush()
+        sys.stdout = _Tee()
+        try: prep()
+        except SystemExit as e:
+            if isinstance(e.code, str): buf.write(e.code + '\n')  # 실패 사유도 prep.txt에
+            raise
+        finally:
+            sys.stdout = sys.__stdout__
+            if os.path.isdir(W): open(f'{W}/prep.txt', 'w', encoding='utf-8').write(buf.getvalue())
+    elif a[0] == 'snapcap': snapcap()
+    elif a[0] == 'snaprestore': snaprestore(a[1], a[2])
     elif a[0] == 'schema': print(SCHEMA)
     elif a[0] == 'check': sys.exit(1 if check(a[1])[1] else 0)
     elif a[0] == 'render': render(a[1])
