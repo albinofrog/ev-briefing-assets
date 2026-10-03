@@ -3,7 +3,7 @@
 
   python3 eval/test_patch.py [REF]     REF: 회귀 평가 파일을 받을 커밋(기본 main). 네트워크 필요(raw.githubusercontent.com)
 """
-import os, sys, json, shutil, subprocess, importlib.util
+import os, re, sys, json, shutil, subprocess, importlib.util
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REF = sys.argv[1] if len(sys.argv) > 1 else 'main'
@@ -167,6 +167,14 @@ try:
     r = subprocess.run([sys.executable, f'{REPO}/eval/score.py', '--prep-only', '--cases', f'{T}/cases9.json'], capture_output=True, text=True, env={**os.environ, 'EV_W': S9b})
     check('score.py: 복원 스냅샷은 prep 없이 같은 후보', r.returncode == 0 and open(f'{S9b}/candidates.md', encoding='utf-8').read() == doc['files']['candidates.md']
           and json.load(open(f'{S9b}/state.json'))['issue'] == 4 and os.path.exists(f'{S9b}/build.py'), r.stdout + r.stderr)
+    # chat_ops.md 4번 마지막 단계: 사용자 평가(gold) 줄 → 그 호의 판정 문항(다른 호 줄은 뺌, '수록'은 핵심·참고 둘 다 인정)
+    u5 = re.search(r'https?://\S+', doc['files']['candidates.md']).group(0)
+    open(f'{T}/gold9.txt', 'w', encoding='utf-8').write(f'5 | k1 | {u5} | 참고 | 메모\n5 | k2 | https://example.com/m | 수록 | 놓침 제보\n7 | k3 | https://example.com/x | 제외 | 다른 호\n')
+    shutil.rmtree(dst, ignore_errors=True)
+    subprocess.run([sys.executable, f'{REPO}/build.py', 'snaprestore', f'{T}/doc9.json', dst], capture_output=True, text=True)
+    r = subprocess.run([sys.executable, f'{REPO}/build.py', 'cases', dst, f'{T}/gold9.txt', f'{T}/cases_005.json'], capture_output=True, text=True)
+    cs = json.load(open(f'{T}/cases_005.json', encoding='utf-8')) if r.returncode == 0 else {'cases': []}
+    check('cases: 같은 호 평가 줄만 판정 문항으로(참고·수록 기대값)', cs.get('snapshot') == 'snapshot-zztest-005' and [x['expect'] for x in cs['cases']] == [{'decision': '참고'}, {'decision_in': ['핵심', '참고']}], r.stdout + r.stderr)
 finally:
     shutil.rmtree(dst, ignore_errors=True)
 

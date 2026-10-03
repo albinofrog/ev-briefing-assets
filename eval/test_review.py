@@ -293,4 +293,16 @@ check('F early_public: 7일보다 오래되면 막음', any('7일' in l for l in
 check('F early_public: 관련도 1이 아니면 막음', any('관련도 1만' in l for l in cut(3)), o)
 check('F 사유 없는 기준 이전 기사는 그대로 막음', any('기준 밖' in l for l in cut(4)), o)
 
+# G. trace: 수록 기준 이후 → C6, 기준 이전이나 작업 시작 7일 이내 → C9(관련도 1이면 3절 예외 대상), 더 이르면 C2
+W = setup()
+json.dump({'start': '2026-10-05T22:00:00+00:00', 'cutoff': '2026-10-02T22:00:00+00:00', 'issue': 6}, open(f'{W}/state.json', 'w'))
+open(f'{W}/sent.md', 'w').write('')
+with open(f'{W}/items.jsonl', 'w', encoding='utf-8') as fh:
+    for k, pub in (('g1', '2026-10-03T05:00:00'), ('g2', '2026-10-01T05:00:00'), ('g3', '2026-09-20T05:00:00')):
+        fh.write(json.dumps({'v': 3, 'key': k, 'first_seen': pub + 'Z', 'pub': pub + 'Z', 'src': 'x', 'region': '미국', 'kind': 'list',
+                             'title': k, 'url': f'https://example.com/{k}', 'bf': False}) + '\n')
+c, o = run(W, 'trace', 'MISS-P', 'https://example.com/g1', 'https://example.com/g2', 'https://example.com/g3')
+codes = [l.split(' | ')[0] for l in o.splitlines() if l.startswith('MISS-P:')]
+check('G trace: 기준 이후 C6, 기준 이전 7일 이내 C9, 더 이르면 C2', codes == ['MISS-P:C6', 'MISS-P:C9', 'MISS-P:C2'], o)
+
 print(f'\n{fails} failed'); sys.exit(1 if fails else 0)

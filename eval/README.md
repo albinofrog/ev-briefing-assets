@@ -10,7 +10,7 @@
   - `known_gap`: 아직 해결 못 한 알려진 공백. 회귀 판정에서 빠지고, 해결 수를 따로 셉니다.
   - `status`: `draft`는 사용자 검토 전, `reviewed`는 검토를 마친 정답.
 - `score.py`: 채점기. `replay.md`: 판정 문항용 재현 실행 절차. `results/`: 재현 결과와 점수 기록.
-- `test_patch.py`: 승인 개선안 적용(decide·patch·재적용) 검사(네트워크 필요). `test_review.py`: 2026-10-02 검수 반영분(재적용·장부·승격 판정 등) 검사. build.py를 고치면 둘 다 종료 0이어야 합니다(chat_ops.md).
+- `test_patch.py`: 승인 개선안 적용(decide·patch·재적용) 검사(네트워크 필요). `test_review.py`: 검수 반영분(재적용·장부·승격 판정·early_public·trace C9 등) 검사. build.py를 고치면 둘 다 종료 0이어야 합니다(chat_ops.md).
 
 ```
 python3 eval/score.py                         # 현재 build.py

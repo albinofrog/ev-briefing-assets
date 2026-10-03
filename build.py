@@ -1159,7 +1159,7 @@ def trim(what):
 CAUSE = {'FP': '불필요 수록(사용자)', 'OVER': '등급 과대(사용자: 참고로 충분)', 'UNDER': '등급 과소(사용자: 핵심이어야)',
          'C1': '미수집(목록·검색어 공백)', 'C2': '수집됐으나 수록 기준 이전 판정', 'C3': '장부에 있음(중복 판정)',
          'C4': '후보 하위 구간(점수 공백)', 'C5': '후보 상위 구간인데 미수록(판정 공백)', 'C6': '이전 회차가 이미 보고 넘김(판정 공백)',
-         'C7': '수록됨(놓침 아님)', 'C8': '예산 부족으로 이월(판정 아님)'}
+         'C7': '수록됨(놓침 아님)', 'C8': '예산 부족으로 이월(판정 아님)', 'C9': '수록 기준 이전이나 7일 이내(관련도 1이면 rules.md 3절 예외 대상)'}
 
 
 def doc_rows(d, coll):
@@ -1300,7 +1300,9 @@ def trace(code, urls):
             b, cn = bands[h]; c, why = ('C4' if b <= 1 else 'C5'), f'{cn} 점수 구간 {b}'
         elif o:
             pub = o.get('pub') or o['first_seen']
-            if pub[:19] < st['cutoff'][:19]: c, why = 'C2', f"게재·수집 {pub[:16]}Z가 수록 기준 이전"
+            lo7 = (kst(st['start']) - dt.timedelta(days=7)).astimezone(dt.timezone.utc).isoformat()[:19]
+            if lo7 <= pub[:19] < st['cutoff'][:19]: c, why = 'C9', f"게재·수집 {pub[:16]}Z가 수록 기준 이전, 작업 시작 7일 이내"
+            elif pub[:19] < st['cutoff'][:19]: c, why = 'C2', f"게재·수집 {pub[:16]}Z가 수록 기준 이전"
             else: c, why = 'C6', f"{o['src']} {o['first_seen'][:16]}Z 수집, 이전 회차 후보"
             why += f" | 출처 {o['src']}"
         else:
