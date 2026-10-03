@@ -88,7 +88,7 @@ SCHEMA = r'''
       "relevance": 1,                          // 관련도 1~3
       "relevance_basis": "SOH 산출 주기 개발 언급",  // 관련도 1·2만: 판정 근거가 된 원문 내용(주제어 포함, 60자 이내, 원문 문장 복사 금지). 3이면 생략
       "source_tier": 2,                        // 출처 등급 1~3(판정 규칙 3절). url 매체 기준, 원출처는 origin
-      "trust_fail": null,                      // 관련도 1·2인데 참고로 둘 때 사유: "self_promo" | "time_unverified" | "no_action"(의견·발언만 있음) | "existing_plan"(기존 사업·계획 소개에 새 목표치만 더함) | "source_unverified"(3등급 매체이고 원출처 미확인)
+      "trust_fail": null,                      // 관련도 1·2인데 참고로 둘 때 사유: "self_promo" | "time_unverified" | "no_action"(의견·발언만 있음) | "existing_plan"(기존 사업·계획 소개에 새 목표치만 더함) | "source_unverified"(3등급 매체이고 원출처 미확인) | "early_public"(관련도 1인데 최초 공개가 수록 기준 이전·작업 시작 7일 이내)
       "origin": {"url": "https://…", "outlet": "현대자동차그룹", "title": "…", "date": "2026-09-28"},  // 없으면 null
       "event_key": "현대자동차그룹 / 개발 / -"   // 주체 / 행위 명사 1개 / 대표 수치("|" 금지)
     }
@@ -683,7 +683,7 @@ def check(path, quiet=False):
         if o is not None and not (isinstance(o, dict) and isinstance(o.get('url'), str) and o['url'].startswith('http')):
             bad.append('origin(url 필수, 없으면 null)')
         if 'relevance' in it and it['relevance'] not in (1, 2, 3): bad.append('relevance(1~3)')
-        if it.get('trust_fail') not in (None, 'self_promo', 'time_unverified', 'no_action', 'existing_plan', 'source_unverified'): bad.append('trust_fail')
+        if it.get('trust_fail') not in (None, 'self_promo', 'time_unverified', 'no_action', 'existing_plan', 'source_unverified', 'early_public'): bad.append('trust_fail')
         if it.get('source_tier') not in (1, 2, 3): bad.append('source_tier(1~3)')
         rb = it.get('relevance_basis')
         if it.get('relevance') in (1, 2) and it.get('body_read') and not (isinstance(rb, str) and 0 < len(rb.strip()) <= 60):
@@ -700,7 +700,12 @@ def check(path, quiet=False):
         if not fp:
             E.append(f'{L}: first_public 형식 "YYYY-MM-DD HH:MM" 또는 "YYYY-MM-DD"(KST)')
         else:
-            if has_t:
+            early = it.get('trust_fail') == 'early_public'  # rules.md 3절: 관련도 1이고 작업 시작 7일 이내면 기준 이전이어도 참고
+            if early:
+                if it.get('relevance') != 1: E.append(f'{L}: early_public은 관련도 1만 → 제외')
+                elif fp.date() < (start - dt.timedelta(days=7)).date(): E.append(f'{L}: early_public인데 최초 공개가 작업 시작 7일 전보다 이름 → 제외')
+                elif (fp >= cutoff) if has_t else (fp.date() > cutoff.date()): E.append(f'{L}: 최초 공개가 수록 기준 이후면 early_public이 아님 → trust_fail 지움')
+            elif has_t:
                 if fp < cutoff: E.append(f'{L}: 최초 공개가 3일 기준 밖 → 제외(새 단계면 새 단계 시각을 적음)')
             elif fp.date() < cutoff.date():
                 E.append(f'{L}: 날짜만 확인된 기사가 기준일({cutoff:%m-%d}) 이전 → 제외(시각을 확인했으면 시:분까지 적음)')
@@ -720,10 +725,10 @@ def check(path, quiet=False):
                 elif dt.date(*map(int, od.groups())) < fp.date() - dt.timedelta(days=1):
                     E.append(f'{L}: 원출처({od.group()})가 최초 공개보다 이름 → first_public을 원출처 기준으로(3일 밖이면 제외)')
             ud = url_date(it['url'])
-            if ud and ud < cutoff.date() - dt.timedelta(days=1) and not it.get('followup'):
+            if ud and ud < cutoff.date() - dt.timedelta(days=1) and not it.get('followup') and not early:
                 E.append(f'{L}: URL 날짜 {ud}가 기준일 이전 → 제외')
             mt = meta.get(uhash(it['url']))
-            if mt and not it.get('followup'):  # 후보 목록의 게재 시각과 대조
+            if mt and not it.get('followup') and not early:  # 후보 목록의 게재 시각과 대조
                 if mt['own'] and kst(mt['own']) < cutoff - dt.timedelta(hours=1):
                     E.append(f"{L}: 목록 게재 시각 {kst(mt['own']):%m-%d %H:%M}이 수록 기준 이전 → 제외(새 단계면 followup)")
                 elif mt['min'] and mt['min'] != mt['own'] and kst(mt['min']) < cutoff:

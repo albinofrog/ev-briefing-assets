@@ -277,4 +277,20 @@ c, o = run(W, 'check', f'{W}/b.json')
 ex = [l for l in o.splitlines() if '제외 출처' in l]
 check('E check가 thecooldown·usatoday 보도자료 경로를 막고 일반 기사는 통과', len(ex) == 2 and any('[1]' in l for l in ex) and any('[2]' in l for l in ex) and not any('[3]' in l for l in ex), o)
 
+# F. 3절 관련도 1 예외(early_public): 기준 이전이어도 작업 시작(10-06 07:00 KST) 7일 이내면 통과, 그 밖은 막음
+def early(u, h, fp, rel=1, tf='early_public'):
+    it = ref_item(u, h); it.update({'first_public': fp, 'published': fp[5:], 'published_kst': fp[5:], 'relevance': rel, 'trust_fail': tf})
+    return it
+json.dump({'items': [early('https://example.com/a1', '잔존가치 보고서 재보도', '2026-10-01 10:00'),
+                     early('https://example.com/a2', '오래된 잔존가치 보고서', '2026-09-20 10:00'),
+                     early('https://example.com/a3', '관련도 2 재보도', '2026-10-01 10:00', rel=2),
+                     early('https://example.com/a4', '사유 없는 기준 이전 기사', '2026-10-01 10:00', rel=3, tf=None)],
+           'calls': {'본문': 0, '보조': 0}, 'dropped': [], 'deferred': [], 'errors': []}, open(f'{W}/b.json', 'w'), ensure_ascii=False)
+c, o = run(W, 'check', f'{W}/b.json')
+cut = lambda n: [l for l in o.splitlines() if f'[{n}]' in l and ('기준' in l or 'early_public' in l)]
+check('F early_public: 관련도 1·7일 이내는 기준 이전이어도 오류 없음', not [l for l in o.splitlines() if l.startswith('오류') and '[1]' in l], o)
+check('F early_public: 7일보다 오래되면 막음', any('7일' in l for l in cut(2)), o)
+check('F early_public: 관련도 1이 아니면 막음', any('관련도 1만' in l for l in cut(3)), o)
+check('F 사유 없는 기준 이전 기사는 그대로 막음', any('기준 밖' in l for l in cut(4)), o)
+
 print(f'\n{fails} failed'); sys.exit(1 if fails else 0)
