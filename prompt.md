@@ -39,7 +39,7 @@
 8. 장부 기록: 7번 전달이 성공한 경우에만 합니다(수록 0건이면 건너뜀). 먼저 `python3 /tmp/ev/build.py ledger board`의 결과를 ArtifactData `batch`로 보드 `ledger`에 씁니다(주 장부). 그다음 백업으로 `/tmp/ev/ledger.txt`의 줄을 메모리 `sent.md`에 추가합니다. 파일이 없으면 `memory_write`(if_version `new`)로 만들고, 있으면 `memory_read` 후 `memory_append`로 추가하며, 한 번에 5줄 이하씩 씁니다. check가 "trim sent"를 안내했으면 추가하기 전에 `trim sent` 결과로 덮어씁니다. 추가한 뒤 다시 읽어 ledger.txt의 줄이 모두 있는지 확인합니다. 보드 쓰기가 성공했으면 메모리 줄 일부가 빠져도 장부 확인은 성공으로 보고 빠진 줄을 오류에 적습니다. 보드와 메모리 모두 실패한 경우만 장부 실패입니다.
 9. 상태 기록: 7번 전달이 성공했거나 수록이 0건인 경우에만, 메모리 `state.md`를 `/tmp/ev/memstate_next.md` 내용으로 덮어씁니다. 전달에 실패했으면 8·9번을 하지 않습니다(다음 회차가 같은 후보를 다시 봄).
 10. `/tmp/ev/runlog_block.md`를 메모리 `run_log.md` 끝에 `memory_append`합니다. 전달·장부 실패가 있었으면 블록의 "오류:" 줄에 적습니다. run_log.md가 30KB를 넘으면 내용을 `/tmp/ev/run_log.md`에 저장하고 `trim log` 결과로 덮어씁니다.
-11. PushNotification으로 `/tmp/ev/push.txt` 내용을 보냅니다. 전달이나 장부 확인에 실패했으면 보내기 전에 `python3 /tmp/ev/build.py failpush 전달` 또는 `failpush 장부`를 실행합니다. 이 알림은 라절보다 먼저 보냅니다. `improve`가 off가 아니고 `python3 /tmp/ev/build.py rated`가 0을 출력하면 문구 끝에 ` | 놓친 기사는 보드에 URL 제보`를 붙입니다.
+11. PushNotification으로 `/tmp/ev/push.txt` 내용을 보냅니다. 전달이나 장부 확인에 실패했으면 보내기 전에 `python3 /tmp/ev/build.py failpush 전달` 또는 `failpush 장부`를 실행합니다. 이 알림은 라절보다 먼저 보냅니다. `improve`가 off가 아니고 `python3 /tmp/ev/build.py rated`가 0을 출력하며 작업 시작이 월요일(KST)이면 문구 끝에 ` | 놓친 기사는 보드에 URL 제보`를 붙입니다.
 
 ## 라. 자가개선 (알림 뒤)
 `/tmp/ev/improve.md`를 읽고 그대로 따릅니다. 그 파일 안의 "9절"은 rules.md 9절, "가.3" 등은 이 프롬프트의 절입니다.
@@ -54,8 +54,4 @@
 7. 어떤 오류가 나도 세션에 사유를 남기고 푸시를 보냅니다.
 
 ## 바. 채팅 반영 (예약 실행에서는 하지 않음)
-사용자가 채팅에서 보드 승인분 반영이나 통합을 요청하면, 그 채팅 세션이 저장소를 연결해 다음을 합니다.
-1. 메모리 `patches.md`의 수정(이미 회차에 적용 중)을 저장소 파일에 같은 문구로 넣고, 보드 proposals에서 `status: needs_chat`인 개선안은 change대로 고칩니다. rules.md를 고쳤으면 `build.py guard <고치기 전> <고친 뒤>` 종료 0, 그다음 `EV_W=/tmp/evgate python3 eval/score.py` 종료 0이어야 합니다. build.py를 고쳤으면 `python3 eval/test_patch.py`와 `python3 eval/test_review.py`도 종료 0이어야 합니다. 통과하면 `apply(p번호): 제목`으로 main에 커밋·푸시하고, rules.md·improve.md·build.py 가운데 하나라도 바꿨으면 메모리 `config.md`의 `ref`를 새 커밋으로 바꿉니다. layer `prompt`는 예약 작업 프롬프트와 저장소 `prompt.md`를 같은 문구로 고치고, 고친 뒤 두 전문이 같은지 대조합니다. rules.md·improve.md를 바꾸는 개선안은 고치기 전·후 문구를 사용자에게 보여 확인받은 뒤 커밋합니다. rules.md 2~6절을 바꾸면 그 전에 `eval/replay.md` 절차로 개정 전·후 판정 점수를 비교해 함께 보여 줍니다. 통합한 수정은 메모리 `patches.md`에서 지웁니다.
-   build.py의 scorecard 지표 계산을 바꿨으면 메모리 `run_log.md`에 `지표 계산 변경: <바뀐 지표> <커밋> <날짜>` 한 줄을 append합니다.
-2. 반영한 개선안은 보드 `status: applied`, 메모리 `lessons.md`의 교훈 상태를 반영으로 바꾸고 관찰 지표 칸에 `반영 <metrics.md 줄 수>`를 덧붙입니다. 실패하면 되돌리고 `status: failed`, `apply_error: 사유 한 줄`.
-3. 사용자가 채팅에서 이 예약 작업의 수동 실행을 요청하면, 정식 회차로 낼 것인지 먼저 확인합니다. 확인용이면 메모리 `config.md`를 `dry: on`으로 바꾼 뒤 실행하고, 실행이 끝나면 `dry: off`로 되돌립니다(수동 확인 실행이 호 번호·장부·metrics.md를 움직이지 않게).
+사용자가 채팅에서 보드 승인분 반영·통합이나 이 예약 작업의 수동 실행을 요청하면, 그 채팅 세션이 저장소를 연결하고 저장소의 `chat_ops.md`를 읽어 그대로 따릅니다.
