@@ -19,7 +19,7 @@
     {"id": "J01", "layer": "judge", "status": "reviewed", "confidence": "높음", "match": "transportenvironment.org/articles/second-hand-evs-retain", "expect": {"decision": "제외"}, "reason": "장부 T&E 분석(제004호) 같은 사건"},
     {"id": "J02", "layer": "judge", "status": "reviewed", "confidence": "높음", "match": "thedriven.io/2026/09/30/second-hand-evs", "expect": {"decision": "제외"}, "reason": "J01과 같은 T&E 연구 재보도"},
     {"id": "J03", "layer": "judge", "status": "reviewed", "confidence": "높음", "match": "nna.jp/news/2971885", "expect": {"decision": "제외"}, "reason": "장부 현대자동차그룹 개발(09-28 09:20 머니투데이, 기준 이전)"},
-    {"id": "J04", "layer": "judge", "status": "reviewed", "confidence": "높음", "match": "batteriesnews.com/qnovo-adds-certainty", "expect": {"decision": "제외"}, "reason": "최초 공개 09-24(tmcnet), 기준 이전"},
+    {"id": "J04", "layer": "judge", "status": "reviewed", "confidence": "높음", "match": "batteriesnews.com/qnovo-adds-certainty", "expect": {"decision": "참고"}, "reason": "최초 공개 09-24(tmcnet), 기준 이전. 2026-10-03 사용자 판정으로 참고 확정: 관련도 1이고 작업 시작 7일 이내라 3절 early_public 예외"},
     {"id": "J05", "layer": "judge", "status": "reviewed", "confidence": "높음", "match": "21jingji.com/article/20261001/6cdddf5e", "expect": {"decision": "제외"}, "reason": "장부 NIO Power 지분매각 같은 사건"},
     {"id": "J06", "layer": "judge", "status": "reviewed", "confidence": "중간", "match": "auto.cctv.com/2026/09/29/ARTIO9UUBUOqbsIl605GuQYW", "expect": {"decision": "제외"}, "reason": "Geely·NIO 충전·교환 전략 협력은 지분 거래와 같은 사건(제004호 판단과 같음)"},
     {"id": "J07", "layer": "judge", "status": "reviewed", "confidence": "높음", "match": "glamadelaide.com.au/new-3-minute-ev-battery-health-test", "expect": {"decision": "제외"}, "reason": "권역 밖(호주)"},
