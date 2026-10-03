@@ -53,7 +53,7 @@ AX_SHORT = {1: '시장 지표', 2: '정책·규제', 3: '중고·잔존가치', 
 AX_LONG = {1: 'EV·배터리 시장 지표', 2: '정책·규제', 3: '중고 EV·리스·잔존가치', 4: '보험·금융', 5: '배터리 데이터·진단'}
 REGIONS = ['한국', 'EU', '미국', '중국', '일본']
 BLOCKED = ['msn.com', 'naver.com', 'daum.net', 'yahoo.com', 'yahoo.co.jp', 'sina.com.cn', 'sina.cn', '163.com',
-           'sohu.com', 'qq.com', 'bing.com', 'news.google.com', 'eletric-vehicles.com']
+           'sohu.com', 'qq.com', 'bing.com', 'news.google.com', 'eletric-vehicles.com', 'infoseek.co.jp']
 BANNED = r'시사|전망|기회|위협|보인다|예상|주목|당사(?!자)'
 WEEK = '월화수목금토일'
 
@@ -1783,7 +1783,7 @@ if __name__ == '__main__':
     elif a[0] == 'rated': print(rated())
     elif a[0] == 'feedback': feedback(a[1], a[2] if len(a) > 2 else '')
     elif a[0] == 'trace': trace(a[1], a[2:])
-    elif a[0] in ('scorecard', 'yield'): scorecard(a[1])
+    elif a[0] == 'scorecard': scorecard(a[1])
     elif a[0] == 'coverage': coverage()
     elif a[0] == 'snapshot': snapshot(a[1])
     elif a[0] == 'cases': cases(a[1], a[2], a[3])

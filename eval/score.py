@@ -39,6 +39,7 @@ def run_prep(b, snap, src):
             b.prep()
         except SystemExit as e:
             if e.code: sys.exit('prep 실패:\n' + out.getvalue())
+    open(f'{W}/prep.txt', 'w', encoding='utf-8').write(out.getvalue())  # 재현 에이전트가 실제 회차처럼 prep 출력(수록 기준·수집 실패 목록·경고)을 봄
     return W
 
 

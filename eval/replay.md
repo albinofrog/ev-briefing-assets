@@ -17,7 +17,7 @@
 
 ## 실행 에이전트 지시문
 
-> 브리핑 판정 규칙(첨부한 rules.md)의 재현 실행입니다. `/tmp/ev`는 이미 준비돼 있습니다(준비 단계는 하지 않음). rules.md 0·2~6절을 따르고, 그다음 다음 두 단계만 합니다(`python3 /tmp/ev/build.py schema`, briefing.json 작성, `python3 /tmp/ev/build.py check /tmp/ev/briefing.json`). 메모리 도구, render, SendUserFile, PushNotification은 쓰지 않습니다. 장부는 `/tmp/ev/sent.md`입니다. 웹 호출 예산은 프롬프트대로입니다. 검토한 모든 후보(제목만 보고 넘긴 것 포함)를 `/tmp/ev/decisions.tsv`에 한 줄씩 `후보번호<TAB>본문열람(y/n/실패)<TAB>결정(핵심/참고/제외/이월)<TAB>사유`로 적습니다. 끝나면 `/tmp/ev/briefing.json`과 `decisions.tsv`를 지정 경로에 복사하고, 결과를 요약해 보고합니다.
+> 브리핑 판정 규칙(첨부한 rules.md)의 재현 실행입니다. `/tmp/ev`는 이미 준비돼 있습니다(준비 단계는 하지 않음). prep 출력(수록 기준, 수집 실패 목록, 경고)은 `/tmp/ev/prep.txt`에 있으니 먼저 읽습니다. rules.md 0·2~6절을 따르고, 그다음 다음 두 단계만 합니다(`python3 /tmp/ev/build.py schema`, briefing.json 작성, `python3 /tmp/ev/build.py check /tmp/ev/briefing.json`). 메모리 도구, render, SendUserFile, PushNotification은 쓰지 않습니다. 장부는 `/tmp/ev/sent.md`입니다. 웹 호출 예산은 프롬프트대로입니다. 검토한 모든 후보(제목만 보고 넘긴 것 포함)를 `/tmp/ev/decisions.tsv`에 한 줄씩 `후보번호<TAB>본문열람(y/n/실패)<TAB>결정(핵심/참고/제외/이월)<TAB>사유`로 적습니다. 끝나면 `/tmp/ev/briefing.json`과 `decisions.tsv`를 지정 경로에 복사하고, 결과를 요약해 보고합니다.
 
 ## 한계
 

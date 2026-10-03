@@ -90,7 +90,7 @@ Elektroauto, Elektroautos, E-Auto, E-Autos, Batterie, Akku, Lithium, Gebrauchtwa
 `제외`는 수집 단계에서 버립니다(자체 매체·집계·SNS·유료 보도자료 면). `/`가 들어간 항목(도메인/경로)은 URL에 그 문자열이 있으면 버립니다. `제목 제외`는 제목에 그 단어가 있으면 버립니다(광고·스팸). `발견 전용`은 남기되 후보 점수를 낮추고, 리포트에는 원 매체 URL을 찾아 씁니다.
 
 제외: chejiahao.autohome.com.cn, k.sina.com.cn, aikahao.xcar.com.cn, user.guancha.cn, thecooldown.com, usatoday.com/press-release/, timeline.sohu.com, baijiahao.baidu.com, toutiao.com, tradingview.com, zhihu.com, weibo.com, tistory.com, blog.naver.com, post.naver.com, brunch.co.kr, medium.com, substack.com, note.com, x.com, twitter.com, facebook.com, linkedin.com, youtube.com, reddit.com, wikipedia.org, marketbeat.com
-발견 전용: sina.com.cn, sina.cn, sohu.com, 163.com, qq.com, msn.com, naver.com, daum.net, yahoo.com, yahoo.co.jp, news.google.com, bing.com, eletric-vehicles.com
+발견 전용: sina.com.cn, sina.cn, sohu.com, 163.com, qq.com, msn.com, naver.com, daum.net, yahoo.com, yahoo.co.jp, news.google.com, bing.com, eletric-vehicles.com, infoseek.co.jp
 제목 제외: 买球, 博彩, 赌场, 彩票, casino, sportsbook
 
 ## F. 관련도 주체
