@@ -788,6 +788,8 @@ def check(path, quiet=False):
                 msg = f'{L}: 장부의 "{r["key"]}"와 주체·행위 일치'
                 if ks[1] in GENERIC_ACT: Wn.append(msg + ' → 같은 사건이면 제외, 다른 사건이면 그대로')
                 else: E.append(msg + ' → 새 단계면 followup=true, 같은 사건이면 제외')
+            elif ks[0] == kn[0] and ks[0] not in ('', '-') and ks[1] != kn[1] and not it.get('followup'):
+                Wn.append(f'{L}: 장부의 "{r["key"]}"({r["date"]})와 주체 같고 행위 다름 → 같은 사건의 다른 표기면 제외, 새 단계면 followup=true')
         if it.get('followup') and not any(key_sa(r['key'])[0] == key_sa(it['event_key'])[0] for r in sent):
             (E if sent_ok else Wn).append(f'{L}: followup=true인데 장부에 같은 주체 없음 → 새 사건이면 followup=false로 기준 시각 검사를 받음')
     evs, figs, subs = {}, {}, {}
@@ -893,6 +895,8 @@ def render(path):
         if pdf_ok: files.insert(0, pdf_path)
     if fails:
         push = '[실패] ' + ','.join(sorted(set(f.split(':')[0] for f in fails))) + ' ' + push
+    nw = waiting_count(f'{W}/fb0')  # 준비 단계(가.3)가 받은 보드 사본 기준
+    if nw: push = f'[승인 대기 {nw}] ' + push
     bu = board_url()
     push = push[:200 - (len(bu) + 9 if bu else 0)] + (f' | 제보·평가 {bu}' if bu else '')
     calls = d.get('calls', {})
@@ -1627,6 +1631,12 @@ def gate(ref):
     tail = [l for l in (r.stdout + r.stderr).splitlines() if l.strip()]
     fails = [l for l in tail if l.startswith('FAIL') and '알려진 공백' not in l]
     return r.returncode == 0, '; '.join(fails[:3]) or (tail[-1] if tail else '출력 없음')
+
+
+def waiting_count(d):
+    """보드 사본(DIR/proposals·decisions)에서 사용자 결정을 기다리는 개선안 수(status pending, approve·reject 결정 없음)."""
+    done = {x['_id'] for x in doc_rows(d, 'decisions') if x.get('decision') in ('approve', 'reject')}
+    return sum(1 for p in doc_rows(d, 'proposals') if p.get('status') == 'pending' and p['_id'] not in done)
 
 
 def decide(d, layer=None):

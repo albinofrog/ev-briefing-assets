@@ -305,4 +305,34 @@ c, o = run(W, 'trace', 'MISS-P', 'https://example.com/g1', 'https://example.com/
 codes = [l.split(' | ')[0] for l in o.splitlines() if l.startswith('MISS-P:')]
 check('G trace: 기준 이후 C6, 기준 이전 7일 이내 C9, 더 이르면 C2', codes == ['MISS-P:C6', 'MISS-P:C9', 'MISS-P:C2'], o)
 
+# H. 장부 대조: 주체는 같고 행위 표기만 다른 재수록(제008호 LGES 제휴→양해각서, 제012호 EU 검토→합의)을 확인으로 띄움
+W = setup()
+json.dump({'start': '2026-10-05T22:00:00+00:00', 'cutoff': '2026-10-02T22:00:00+00:00', 'issue': 6}, open(f'{W}/state.json', 'w'))
+open(f'{W}/sent.md', 'w').write(f'{DAY(3)} | 1 | u:56189cc8d0ff | m:60afd7494c97 | LG에너지솔루션 / 제휴 / -\n'
+                                f'{DAY(3)} | 2 | u:1ef5b4df3239 | - | European Commission / 검토 / -\n')
+def keyed(u, h, key, fu=False):
+    it = ref_item(u, h); it.update({'event_key': key, 'followup': fu}); return it
+json.dump({'items': [keyed('https://example.com/h1', 'LGES 인디고테크 양해각서', 'LG에너지솔루션 / 양해각서 / -'),
+                     keyed('https://example.com/h2', 'EU 중국 하이브리드 합의', 'European Commission / 합의 / -'),
+                     keyed('https://example.com/h3', 'EU 다른 단계(후속 표시)', 'European Commission / 선정 / 46개', fu=True),
+                     keyed('https://example.com/h4', '다른 주체', 'Tesla, Inc. / 판매 / 1대')],
+           'calls': {'본문': 0, '보조': 0}, 'dropped': [], 'deferred': [], 'errors': []}, open(f'{W}/b.json', 'w'), ensure_ascii=False)
+c, o = run(W, 'check', f'{W}/b.json')
+hk = lambda n: [l for l in o.splitlines() if l.startswith('확인') and f'[{n}]' in l and '행위 다름' in l]
+check('H 주체 같고 행위 다른 재수록 후보를 확인으로 띄움(LGES·EU)', hk(1) and hk(2), o)
+check('H followup=true나 다른 주체는 띄우지 않음', not hk(3) and not hk(4), o)
+
+# J. 승인 대기 수: 보드 status pending이고 결정(approve·reject)이 아직 없는 개선안만 셈 → 푸시 앞 [승인 대기 N]
+W = setup(); os.environ['EV_W'] = W
+spec_i = importlib.util.spec_from_file_location('b_i', B); bi = importlib.util.module_from_spec(spec_i)
+with warnings.catch_warnings():
+    warnings.simplefilter('ignore'); spec_i.loader.exec_module(bi)
+check('J 보드 사본 없으면 0', bi.waiting_count(f'{W}/fb0') == 0)
+board(W, 'fb0', {'p1': 'rejected', 'p3': 'pending', 'p4': 'pending', 'p5': 'pending'})
+os.makedirs(f'{W}/fb0/decisions', exist_ok=True)
+json.dump({'id': 'p4', 'data': {'decision': 'approve'}}, open(f'{W}/fb0/decisions/p4.json', 'w'))
+json.dump({'id': 'p5', 'data': {'decision': ''}}, open(f'{W}/fb0/decisions/p5.json', 'w'))
+check('J pending 중 결정 없는 것만(p3·p5)', bi.waiting_count(f'{W}/fb0') == 2)
+check('J render가 푸시에 승인 대기 접두를 붙임', "f'[승인 대기 {nw}] '" in open(B, encoding='utf-8').read())
+
 print(f'\n{fails} failed'); sys.exit(1 if fails else 0)
