@@ -335,4 +335,28 @@ json.dump({'id': 'p5', 'data': {'decision': ''}}, open(f'{W}/fb0/decisions/p5.js
 check('J pending 중 결정 없는 것만(p3·p5)', bi.waiting_count(f'{W}/fb0') == 2)
 check('J render가 푸시에 승인 대기 접두를 붙임', "f'[승인 대기 {nw}] '" in open(B, encoding='utf-8').read())
 
+# K. 2026-10-21 구글 경로 중단 경고, 정규식 경고 제거, 스팸·시장조사 제목 제외
+dec = {'fallback': 'googlenewsdecoder 없음', 'eng': 'bing'}
+zero = {'fallback': '구글 0건', 'eng': 'bing'}
+ok_g = {'eng': 'google'}
+d, m = bi.google_down({'watch': {f'q{i}': dec for i in range(46)}})
+check('K 디코더 없음 46/46이면 중단 경고', d and '46/46' in m and 'googlenewsdecoder 없음' in m, m)
+d, m = bi.google_down({'watch': {**{f'z{i}': zero for i in range(9)}, **{f'g{i}': ok_g for i in range(38)}}})
+check('K 구글 0건만 있으면 경고 없음', not d and not m, m)
+d, m = bi.google_down({'watch': {**{f'x{i}': {'fallback': '변환 시간 초과'} for i in range(3)}, **{f'g{i}': ok_g for i in range(44)}}})
+check('K 일부 변환 시간 초과(3/47)는 경고 없음', not d, m)
+check('K 상태 파일 없으면 경고 없음', bi.google_down({}) == (False, ''))
+src = open(B, encoding='utf-8').read()
+check('K render가 중단 표시를 푸시 접두로 붙임', "if st.get('gdown'): push = '[경고] 구글 수집 중단 ' + push" in src)
+r = subprocess.run([sys.executable, '-W', 'error', '-c', f"compile(open({B!r}, encoding='utf-8').read(), 'build.py', 'exec')"], capture_output=True, text=True)
+check('K build.py 문법 경고 없음(정규식 raw 문자열)', r.returncode == 0, r.stderr[-300:])
+tx = re.findall(r'^제목 제외:\s*(.+)$', open(f'{REPO}/sources.md', encoding='utf-8').read(), re.M)[0].lower()
+spam = ['인터넷 도박 처벌 슬롯검증사이트 프리스핀에도 조건이 붙나요?', 'Battery Monitoring Solutions Market to Reach USD 12.46 Billion by 2036',
+        'State of Health Estimation Market To 2035: EV Battery Diagnostics', '日本自動車金融市場は2035年に601.9億米ドル規模へ、CAGR 7％で成長']
+keepers = ['보험연, 전기차 배터리 정보, 차보험료·보상에도 활용해야', 'Shoreham accelerates roll-out of EV battery testing at auction',
+           '„Wertmeister 2026“: Diese Elektroautos sind besonders wertstabil', 'Used EVs are having a moment: A wave of off-lease cars meets growing demand']
+words = [w.strip() for w in tx.split(',') if w.strip()]
+check('K 스팸·시장조사 제목은 제외 단어에 걸림', all(any(w in t.lower() for w in words) for t in spam))
+check('K 실제 수록 기사 제목은 걸리지 않음', not any(any(w in t.lower() for w in words) for t in keepers))
+
 print(f'\n{fails} failed'); sys.exit(1 if fails else 0)

@@ -91,7 +91,7 @@ Elektroauto, Elektroautos, E-Auto, E-Autos, Batterie, Akku, Lithium, Gebrauchtwa
 
 제외: chejiahao.autohome.com.cn, k.sina.com.cn, aikahao.xcar.com.cn, user.guancha.cn, thecooldown.com, usatoday.com/press-release/, timeline.sohu.com, baijiahao.baidu.com, toutiao.com, tradingview.com, zhihu.com, weibo.com, tistory.com, blog.naver.com, post.naver.com, brunch.co.kr, medium.com, substack.com, note.com, x.com, twitter.com, facebook.com, linkedin.com, youtube.com, reddit.com, wikipedia.org, marketbeat.com
 발견 전용: sina.com.cn, sina.cn, sohu.com, 163.com, qq.com, msn.com, naver.com, daum.net, yahoo.com, yahoo.co.jp, news.google.com, bing.com, eletric-vehicles.com, infoseek.co.jp
-제목 제외: 买球, 博彩, 赌场, 彩票, casino, sportsbook
+제목 제외: 买球, 博彩, 赌场, 彩票, casino, sportsbook, 카지노, 슬롯, 도박, CAGR, Market To 20, Market to Reach, 億米ドル
 
 ## F. 관련도 주체
 제목에 이 주체가 나오면 핵심어가 없어도 해당 관련도로 보고 후보 점수를 매깁니다(정렬용, 판정은 프롬프트 5절). 대소문자를 구분합니다.

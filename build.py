@@ -101,6 +101,14 @@ SCHEMA = r'''
 '''
 
 
+def google_down(status):
+    """주제 검색의 구글 경로 중단 의심: 검색어 절반 이상이 '구글 0건' 아닌 사유로 Bing 예비 수집. (판정, 경고 문구)"""
+    wv = status.get('watch', {})
+    why = [v['fallback'] for v in wv.values() if v.get('fallback') and v['fallback'] != '구글 0건']  # 구글 0건은 정상(예비 Bing으로 보완)
+    down = bool(wv) and len(why) * 2 >= len(wv)
+    return down, (f'경고: 구글 뉴스 경로 중단 의심(검색어 {len(why)}/{len(wv)}개가 Bing 예비로 수집, 사유: {", ".join(sorted(set(why)))[:120]})' if down else '')
+
+
 def now_state():
     try:
         return json.load(open(f'{W}/state.json'))
@@ -255,6 +263,8 @@ def prep():
     wfail = [k for k, v in status.get('watch', {}).items() if not v['ok']]
     if stale: print('경고: 48시간 넘게 0건인 소스(구조 변경·차단 의심): ' + ', '.join(stale))
     if wfail: print('경고: 추적 검색어 조회 실패: ' + ', '.join(wfail))
+    st['gdown'], gmsg = google_down(status)
+    if st['gdown']: print(gmsg)
     if bad:
         urls = dict(re.findall(r'^- ([^|]+?) \| [^|]+\| [^|]+\| (https?://\S+)', open(f'{W}/sources.md').read(), re.M))
         print('수집 실패 목록(직접 확인 대상):')
@@ -271,10 +281,10 @@ R1 = re.compile(r'\bSOH\b|state' + S + 'of' + S + 'health|battery' + S + '(healt
                 r'Restwert|Wertverlust|残価|残存価値|減価|\bOBD\b|data' + S + 'access|Data' + S + 'Act|right' + S + 'to' + S + 'repair|in' + S + 'vehicle' + S + 'data|'
                 r'수리권|데이터 개방|차량 데이터|자동차 데이터|vehicle' + S + 'data|Fahrzeugdaten|Datenzugang|汽车数据|车辆数据|車両データ|'
                 r'电池健康|电池检测|(バッテリー|(?<!蓄)電池)の?(診断|状態|劣化)|電池診断|Batterie(zustand|zertifikat|gesundheit|test|check)|'
-                r'degradation|(lose|lost|loses|retain)s?' + S + '(about |only )?[\d.]+%' + S + '(of|per)|capacity' + S + '(loss|fade)|batter(y|ies)' + S + '(degrade|degradation|durability)|durability|'
+                r'degradation|(lose|lost|loses|retain)s?' + S + r'(about |only )?[\d.]+%' + S + '(of|per)|capacity' + S + '(loss|fade)|batter(y|ies)' + S + '(degrade|degradation|durability)|durability|'
                 r'배터리 열화|电池衰减|容量衰减|劣化率', re.I)
 R2 = re.compile(r'passport|여권|护照|数字身份证|이력\s?관리|溯源|second' + S + 'life|재사용|재제조|사용후|사용 후 배터리|은퇴(한)? 배터리|退役电池|换电|battery' + S + 'swap|배터리 교환|recycl|回收|재활용|リサイクル|'
-                r'used' + S + '(ev|car|electric|vehicle)|second[\s\-]?hand|pre' + S + '?owned|remarketing|중고|二手|中古|Gebraucht|保值|insurance|insurer|보험|손해율|车险|保険|Versicherung|'
+                r'used' + S + r'(ev|car|electric|vehicle)|second[\s\-]?hand|pre' + S + '?owned|remarketing|중고|二手|中古|Gebraucht|保值|insurance|insurer|보험|손해율|车险|保険|Versicherung|'
                 r'diagnos|진단|telematics|텔레매틱스|connected' + S + 'car|\blease\b|\bleasing\b|리스 만기|리스사|换电站', re.I)
 # 자동차 문맥 없이 쓰이면 다른 업계 뉴스까지 끌어오는 넓은 단어(데이터 접근·보험·수리권·진단 등)
 BROAD = re.compile(r'data' + S + 'access|right' + S + 'to' + S + 'repair|insur|보험|손해율|保険|Versicherung|diagnos|진단|電池診断|recycl|재활용|回收|リサイクル|\blease\b|\bleasing\b|\bOBD\b', re.I)
@@ -895,6 +905,7 @@ def render(path):
         if pdf_ok: files.insert(0, pdf_path)
     if fails:
         push = '[실패] ' + ','.join(sorted(set(f.split(':')[0] for f in fails))) + ' ' + push
+    if st.get('gdown'): push = '[경고] 구글 수집 중단 ' + push
     nw = waiting_count(f'{W}/fb0')  # 준비 단계(가.3)가 받은 보드 사본 기준
     if nw: push = f'[승인 대기 {nw}] ' + push
     bu = board_url()
