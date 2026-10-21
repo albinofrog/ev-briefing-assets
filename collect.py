@@ -216,6 +216,7 @@ def main(out):
                 kept.append({'v': VER, 'key': o['key'], 'first_seen': o['first_seen'], 'src': o['src'], 'kind': 'list', 'stub': True})
             continue
         if dom_in(o['url'], excl) or any(x in o['url'] for x in paths): continue
+        if any(w in o['title'].lower() for w in title_excl): continue  # 제목 제외 단어를 새로 넣으면 이미 쌓인 항목에도 적용
         if o['kind'] == 'watch' and not keep_watch(o['src'][6:], o['title']): continue
         kept.append(o)
     old = kept
