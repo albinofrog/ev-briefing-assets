@@ -133,4 +133,5 @@ gov, gov.uk, go.kr, gov.cn, go.jp, europa.eu, bund.de, gouv.fr, korea.kr, sec.go
 
 ## H. 확인 2등급 매체
 목록 밖이지만 발행사·편집 책임이 확인돼 2등급으로 보는 매체입니다(승인된 개선안으로만 추가). 형식: 쉼표로 구분한 도메인.
+ecomento.de
 
