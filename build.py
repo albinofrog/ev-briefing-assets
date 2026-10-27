@@ -1057,7 +1057,7 @@ def hl(i):
 
 
 def chrome():
-    for p in glob.glob('/opt/pw-browsers/chromium-*/chrome-linux/chrome') + ['/usr/bin/chromium', '/usr/bin/chromium-browser']:
+    for p in glob.glob('/opt/pw-browsers/chromium-*/chrome-linux*/chrome') + ['/usr/bin/chromium', '/usr/bin/chromium-browser']:
         if os.path.exists(p): return p
 
 
