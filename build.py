@@ -1093,6 +1093,13 @@ def make_pdf(hp, pp, fails):
     if not any(x.startswith('글꼴') for x in fails):
         for f in ('ArchivoNarrow', 'LGSm'):
             if f not in fonts: fails.append(f'글꼴: PDF에 {f} 없음')
+    stray = []  # 쪽 끝에 제목만 남고 내용은 다음 쪽으로 넘어간 곳
+    for n in range(1, int(pages.group(1)) if pages else 1):
+        t = subprocess.run(['pdftotext', '-f', str(n), '-l', str(n), '-layout', pp, '-'], capture_output=True, text=True).stdout
+        ls = [x.strip() for x in t.splitlines() if x.strip() and not re.search(r'제\d{3}호|^\d+ / \d+$', x.strip())]
+        if ls and re.search(r'핵심\s*\d+\s*·\s*참고\s*\d+|핵심 항목 없음|^참고\s*\d+건$|출처 목록', ls[-1]):
+            stray.append(f'{n}쪽 끝 "{ls[-1][:30]}"')
+    if stray: fails.append('쪽나눔: 제목만 남음 ' + ', '.join(stray))
     subprocess.run(['pdftoppm', '-png', '-r', '60', '-f', '1', '-l', '1', pp, f'{W}/page1'])
     print(f'PDF: {pp} | {pages.group(1) if pages else "?"}쪽 | {os.path.getsize(pp) // 1024}KB | 1쪽 미리보기 {W}/page1-1.png')
     return True
