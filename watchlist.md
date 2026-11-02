@@ -7,22 +7,22 @@
 
 ## 데이터 접근·규제
 - "battery passport" OR "digital product passport" battery
-- "Data Act" connected car
-- EU Data Act 자동차 데이터
+- "Data Act" vehicle data | GB:en
+- 차량 데이터 개방
 - in-vehicle data access
 - "right to repair" vehicle
-- OBD 접근 제한
-- 자동차 사이버보안 OBD
-- "UN R155" OBD
+- OBD検査 | JP:ja
+- スキャンツール 整備 | JP:ja
+- Zugang Fahrzeugdaten | DE:de
 - 배터리 이력관리
 - 사용후 배터리 성능평가
-- 전기차 배터리 성능 인증
+- 배터리 안전성 인증제
 - 动力电池 溯源
 - 电池 数字护照
 - 电池健康度 评估 标准
-- "Battery Regulation" "state of health" OR "battery management system" access | GB:en
-- "Euro 7" battery durability | GB:en
-- CARB "state of health" EV
+- EU battery regulation state of health | GB:en
+- vehicle data access repair
+- "REPAIR Act" vehicle
 - 자동차관리법 배터리
 - 중고차 성능점검 배터리
 
@@ -33,7 +33,7 @@
 - "Cox Automotive" battery health | | !
 - 민테크 배터리 | | !
 - EV battery diagnostics
-- バッテリー 診断 EV
+- EV 電池劣化 | JP:ja
 - Batteriezertifikat Gebrauchtwagen
 
 ## 중고·잔존가치
@@ -52,12 +52,12 @@
 ## 보험·금융
 - 전기차 보험료
 - 보험 배터리 데이터 전기차
-- electric vehicle insurance
+- EV insurance claims
 - EV 保険 バッテリー
 - 新能源车险
 
 ## 재사용·교환
 - 사용후 배터리
-- 宁德时代 巧克力换电
+- second-life EV battery | GB:en
 - 蔚来 换电 合作 OR 投资 OR 协议
 - 换电 标准 政策

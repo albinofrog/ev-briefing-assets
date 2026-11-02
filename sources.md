@@ -85,6 +85,7 @@ Elektroauto, Elektroautos, E-Auto, E-Autos, Batterie, Akku, Lithium, Gebrauchtwa
 - 국토교통부 = 국토부
 - Transport & Environment = T&E = 유럽교통환경연합 = transportenvironment.org
 - 宁德时代巧克力换电 = 巧克力换电 = Chocolate Swap = 초콜릿 배터리교환
+- Huawei Yinwang = 引望 = 华为引望 = 华为乾崑 = 인왕
 
 ## E. 수집 제외·발견 전용 도메인
 `제외`는 수집 단계에서 버립니다(자체 매체·집계·SNS·유료 보도자료 면). `/`가 들어간 항목(도메인/경로)은 URL에 그 문자열이 있으면 버립니다. `제목 제외`는 제목에 그 단어가 있으면 버립니다(광고·스팸). `발견 전용`은 남기되 후보 점수를 낮추고, 리포트에는 원 매체 URL을 찾아 씁니다.
@@ -133,5 +134,5 @@ gov, gov.uk, go.kr, gov.cn, go.jp, europa.eu, bund.de, gouv.fr, korea.kr, sec.go
 
 ## H. 확인 2등급 매체
 목록 밖이지만 발행사·편집 책임이 확인돼 2등급으로 보는 매체입니다(승인된 개선안으로만 추가). 형식: 쉼표로 구분한 도메인.
-ecomento.de
+motortradenews.com
 
