@@ -183,5 +183,31 @@ S10 = f'{T}/s10'; os.makedirs(S10)
 r = subprocess.run([sys.executable, f'{REPO}/build.py', 'prep'], capture_output=True, text=True, env={**os.environ, 'EV_W': S10})
 check('prep: 출력이 prep.txt에도 남음', os.path.exists(f'{S10}/prep.txt') and open(f'{S10}/prep.txt', encoding='utf-8').read().strip() != '', r.stdout + r.stderr)
 
+# 11. 이전 회차 중복 대조(runlog_hits): 실제 재전달 사례(제020·021·028호)는 잡고, 같은 회사의 다른 사건과 흔한 이름은 잡지 않음
+S11 = f'{T}/s11'; os.makedirs(S11)
+for f in ('sources.md', 'watchlist.md'): shutil.copy(f'{REPO}/{f}', f'{S11}/{f}')
+open(f'{S11}/run_log_prev.md', 'w', encoding='utf-8').write(
+    '## 제013호 | 시작\n수록: CATL, GBA 배터리 여권 시범  | 핵심 R2 | auto.gasgoo.com ; CATL, 3분기 순이익 | 참고 R3 | cnevpost.com\n'
+    '## 제014호 | 시작\n수록: CATL·Chery, 두 번째 전지 | 참고 R3 | auto.gasgoo.com ; CATL 하이난 교환 | 참고 R3 | i.ifeng.com\n'
+    '## 제016호 | 시작\n수록: 니오, 누적 충전·교환소 9602곳  | 참고 R2 | auto.gasgoo.com ; 베이징·CATL 교환망 | 참고 R2 | cnevpost.com\n'
+    '## 제017호 | 시작\n수록: Aampere, 첫 중고 EV 잔존가 | 참고 R1 | www.autonext.co\n'
+    '## 제019호 | 시작\n탈락: 米中古EV市場、販売比率3.3% | 장부 중복(10-16 Cox 4만7862대)\n'
+    '## 제022호 | 시작\n탈락: 500,000 EV Battery H | Aviloo 조사 09-04 이미 보도\n'
+    '## 제024호 | 시작\n수록: 영국 BVRLA, 3년 넘은 중고 E | 참고 R2 | brokernews.co.uk ; GM Financial·Ally, 3 | 참고 R2 | www.autofinancenews.net\n')
+probe = r'''
+import sys, json; sys.path.insert(0, sys.argv[1]); import build
+L = build.runlog_lines(); its = json.loads(sys.argv[2])
+print(json.dumps([[n, iss] for n, iss, *_ in build.runlog_hits(its, L)]))
+'''
+its = [{'headline': 'Aviloo, 중고 EV 50만 건 배터리 SoH 보고서 공개', 'orig_title': 'Aviloo: 500.000 Batterietests'},
+       {'headline': 'WiWo, Aampere 중고 EV 잔존가치 지수 보도', 'orig_title': 'Gebrauchte Elektroautos: Aampere-Index'},
+       {'headline': '미국 9월 중고 EV 판매 비중 3.3%', 'orig_title': 'Used EV share hits 3.3% in September'},
+       {'headline': 'CATL, 하이난 전역 초콜릿 배터리 교환소', 'orig_title': ''},
+       {'headline': 'GM, 운전 데이터 보험사 판매 의혹', 'orig_title': 'GM settles over driver data sales'}]
+r = subprocess.run([sys.executable, '-c', probe, REPO, json.dumps(its, ensure_ascii=False)], capture_output=True, text=True, env={**os.environ, 'EV_W': S11})
+got = json.loads(r.stdout) if r.returncode == 0 and r.stdout.strip() else None
+check('check: 이전 회차 같은 사건은 잡고(Aviloo 022·Aampere 017·3.3% 019) 흔한 이름·같은 회사 다른 사건은 안 잡음',
+      got == [[1, '022'], [2, '017'], [3, '019']], r.stdout + r.stderr)
+
 print(f'\n{"전부 통과" if not fails else "실패 " + ", ".join(fails)}')
 sys.exit(1 if fails else 0)

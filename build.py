@@ -592,7 +592,7 @@ def read_sent():
         parts = [x.strip() for x in ln.split(' | ')]
         if len(parts) >= 5 and re.match(r'\d{4}-\d{2}-\d{2}$', parts[0]):
             alt = ['u:' + h for h in parts[3][2:].split(',') if h] if parts[3].startswith('m:') else []
-            rows.append({'date': parts[0], 'url': parts[2], 'key': parts[4], 'alt': alt, 'line': ln})
+            rows.append({'date': parts[0], 'axis': parts[1], 'url': parts[2], 'key': parts[4], 'alt': alt, 'line': ln})
     return rows
 
 
@@ -929,13 +929,24 @@ def check(path, quiet=False):
     if rl is None:
         Wn.append('/tmp/ev/run_log_prev.md 없음: 최근 회차 수록·탈락 대조 생략(나.4대로 저장하면 대조함)')
     else:
+        warned = {}
+        if os.path.exists(f'{W}/rl_hits.json'):
+            try: warned = json.load(open(f'{W}/rl_hits.json'))
+            except ValueError: warned = {}
         for n, iss, kind, txt, com in runlog_hits(items, rl):
+            warned[nurl(str(items[n - 1].get('url') or ''))] = {'issue': iss, 'headline': str(items[n - 1].get('headline') or '')[:40]}
             Wn.append(f'[{n}] {str(items[n - 1].get("headline") or "")[:24]}: run_log 제{iss}호 {kind} 「{txt[:60]}」과 같은 사건일 수 있음'
                       f'(공통 {", ".join(com)}) → 같은 사건이고 새 사실이 없으면 빼고 dropped에 "제{iss}호와 같은 사건", 새 단계면 followup true')
+        json.dump(warned, open(f'{W}/rl_hits.json', 'w'), ensure_ascii=False)  # check를 여러 번 돌려도 한 번이라도 경고한 항목은 남김(scorecard 중복경고·중복채택)
     if not quiet or E or Wn:
         print(f'검사: 항목 {len(items)}(핵심 {ncore}) | 오류 {len(E)} | 확인 {len(Wn)}')
         for m in E: print('오류', m)
         for m in Wn: print('확인', m)
+        if sent_ok and sent:  # 표기가 달라 run_log 대조에 안 잡히는 같은 사건(주체를 다르게 적은 협약·출하 등)을 눈으로 대조하는 참고 목록
+            lo = f'{start - dt.timedelta(days=7):%Y-%m-%d}'
+            for a in sorted({str(it.get('axis')) for it in items}):
+                ks = [r['key'] for r in sent if r.get('axis') == a and r['date'] >= lo]
+                if ks: print(f'참고 장부 최근 7일(축 {a}): ' + '; '.join(ks[-25:]))
     if os.path.exists(f'{W}/sent.md') and os.path.getsize(f'{W}/sent.md') > 15000:
         print('안내: sent.md 15KB 초과 → python3 build.py trim sent')
     return d, E
@@ -1613,6 +1624,11 @@ def scorecard(path):
     core = [i for i in its if i['tier'] == 'core']
     pct = lambda a, b: round(100 * a / b) if b else None
     calls = sum(v for v in d.get('calls', {}).values() if isinstance(v, int))
+    try: rlw = json.load(open(f'{W}/rl_hits.json'))
+    except (FileNotFoundError, ValueError): rlw = {}
+    fin = {nurl(i['url']): i for i in its}
+    removed = [u for u in rlw if u not in fin]
+    rl_take = sum(1 for u in rlw if u in fin and fin[u].get('followup')) + min(len(removed), sum(1 for x in d.get('dropped', []) if '같은 사건' in str(x)))
     sc = {
         '검토율': pct(cov['reviewed_hi'], cov['cand_hi']), '주제공백': sum(1 for g in cov['gaps'] if not g['filled']),
         '수집실패': len(cov['list_fail']) + len(cov['watch_fail']), '이월': len(d.get('deferred', [])), '놓침': miss,
@@ -1620,12 +1636,13 @@ def scorecard(path):
         '자체판정1': sum(1 for i in its if not auto_tier(i['url']) and own(i)),
         '핵심원출처': pct(sum(1 for i in core if ver(i)), len(core)), '관련12본문': pct(sum(1 for i in r12 if i.get('body_read')), len(r12)),
         '참고원출처': pct(sum(1 for i in its if i['tier'] != 'core' and i.get('body_read') and ver(i)), sum(1 for i in its if i['tier'] != 'core' and i.get('body_read'))),  # 목표 없음(참고용)
-        '관련12건수': len(r12), '유용비율': pct(fb['유용'], fb['평가']), 'FP': cnt('FP'), 'OVER': cnt('OVER'), 'UNDER': cnt('UNDER')}
+        '관련12건수': len(r12), '유용비율': pct(fb['유용'], fb['평가']), 'FP': cnt('FP'), 'OVER': cnt('OVER'), 'UNDER': cnt('UNDER'),
+        '중복경고': len(rlw), '중복채택': rl_take, '전달후발견': sum(1 for e in d.get('errors', []) if str(e).startswith('전달 후 발견'))}  # 앞 둘·전달후발견은 목표 없음(대조 품질·재발 관찰용)
     tg = targets()
     low = {'주제공백', '수집실패', '이월', '놓침', 'FP', 'OVER', 'UNDER', '자체판정2', '자체판정1'}
     miss_t = [k for k, v in tg.items() if sc.get(k) is not None and (sc[k] > v if k in low else sc[k] < v)]
     axis = {'검색 충분성': ['검토율', '주제공백', '수집실패', '이월', '놓침'], '출처 신뢰성': ['출처12비율', '자체판정2', '자체판정1', '핵심원출처', '관련12본문', '참고원출처'],
-            '문서 관련성': ['관련12건수', '유용비율', 'FP', 'OVER', 'UNDER']}
+            '문서 관련성': ['관련12건수', '유용비율', 'FP', 'OVER', 'UNDER', '중복경고', '중복채택', '전달후발견']}
     issue = st['issue'] + (1 if its else 0)
     f = lambda k: '-' if sc[k] is None else (f'{sc[k]}%' if k in ('검토율', '출처12비율', '핵심원출처', '관련12본문', '참고원출처', '유용비율') else str(sc[k]))
     line = (f"{kst(st['start']):%Y-%m-%d} | {issue} | 핵심 {len(core)} 참고 {len(its) - len(core)} | 웹 {calls} | 평가 {fb['평가']} 유용 {fb['유용']} | "
@@ -1670,7 +1687,7 @@ def snapshot(dst):
     print(f'{dst}: 항목 {n}건, 작업 시작 {st["start"]}, 회차 {st["issue"] + 1}')
 
 
-SNAP_FILES = ('candidates.md', 'cand_meta.json', 'sent.md', 'memstate.md', 'prep.txt')
+SNAP_FILES = ('candidates.md', 'cand_meta.json', 'sent.md', 'memstate.md', 'prep.txt', 'run_log_prev.md')
 SNAP_SLOTS = 20  # 보드 snapshots 문서 수(호 번호를 돌려 씀, 평일 약 4주)
 
 
@@ -1678,6 +1695,8 @@ def snapcap():
     """prep 직후: 이번 회차가 실제로 본 입력을 보드 snapshots 한 문서로 묶음(평가 세트용, 발행 회차만 보드에 씀)."""
     st = now_state(); iss = st['issue'] + 1
     files = {f: open(f'{W}/{f}', encoding='utf-8').read() for f in SNAP_FILES if os.path.exists(f'{W}/{f}')}
+    if 'run_log_prev.md' in files:  # check의 이전 회차 대조에 쓰는 줄(회차 머리·수록·탈락)만 남겨 문서 크기를 줄임
+        files['run_log_prev.md'] = ''.join(l for l in files['run_log_prev.md'].splitlines(True) if re.match(r'(## 제\d+호|수록: |탈락: )', l))
     doc = {'issue': iss, 'start': st['start'], 'cutoff': st['cutoff'], 'files': files}
     json.dump(doc, open(f'{W}/snap_doc.json', 'w', encoding='utf-8'), ensure_ascii=False)
     did = f's{iss % SNAP_SLOTS:02d}'
