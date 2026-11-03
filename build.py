@@ -165,7 +165,10 @@ def prep():
         print(f'중단: 다른 회차가 {running}에 시작해 진행 중일 수 있음(3시간 이내)')
         sys.exit(2)
     fails = []
-    for src, dst in ASSETS:
+    # template.html은 build.py와 함께 바뀌므로 config.md의 ref 커밋에 고정(나.1이 /tmp/ev/ref.txt에 저장). 없으면 main
+    ref = open(f'{W}/ref.txt').read().strip() if os.path.exists(f'{W}/ref.txt') else ''
+    assets = [(REPO.replace('/main/', f'/{ref}/') + s if ref and s == 'template.html' else s, d) for s, d in ASSETS]
+    for src, dst in assets:
         err = curl(src, dst)
         if err: fails.append(src.split('/')[-1])
         print(f"{'OK  ' if not err else '실패'} {src.split('/')[-1]}" + (f' | {err}' if err else ''))
@@ -665,6 +668,65 @@ def title_gap(a, b):
     return not (tok(x) & tok(y))
 
 
+def runlog_lines(path=None, n=15):
+    """메모리 run_log.md 사본에서 최근 n회차의 수록·탈락 줄을 (호, 구분, 글) 목록으로."""
+    p = path or f'{W}/run_log_prev.md'
+    if not os.path.exists(p): return None
+    out, issue = [], None
+    for ln in open(p, encoding='utf-8'):
+        m = re.match(r'## 제(\d+)호', ln)
+        if m: issue = m.group(1); continue
+        m = re.match(r'(수록|탈락): (.*)', ln.strip())
+        if m and issue:
+            for seg in m.group(2).split(' ; '):
+                if seg.strip() and seg.strip() != '…': out.append((issue, m.group(1), seg.strip()))
+    keep = sorted({x[0] for x in out}, key=int)[-n:]
+    return [x for x in out if x[0] in keep]
+
+
+RL_STOP = {'used', 'power', 'automotive', 'index', 'motor', 'motors', 'group', 'energy', 'resale', 'record', 'share', 'values'}
+
+
+def rl_tokens(t):
+    t = unicodedata.normalize('NFKC', str(t or ''))
+    ents = entities(t)
+    return ({('e', x) for x in ents} | {('p', w) for w in pnouns(t) if w not in RL_STOP and not entities(w)} |
+            {('n', x) for x in numbers(t) if x.startswith('!')})
+
+
+def rl_sim(a, b):
+    """두 제목의 글자 2-gram 자카드 유사도(공백·기호 제외, run_log 줄은 첫 칸 제목만)."""
+    g = lambda t: {t[i:i + 2] for i in range(len(t) - 1)}
+    x, y = g(re.sub(r'[\W_]+', '', a.lower())), g(re.sub(r'[\W_]+', '', b.split(' | ')[0].lower()))
+    return len(x & y) / len(x | y) if x and y else 0
+
+
+def runlog_hits(items, lines, recent=5):
+    """이번 항목이 최근 회차 수록·탈락 줄과 같은 사건일 수 있으면 (항목 번호, 호, 구분, 글, 공통 토큰).
+    드문 강한 수치(2줄 이하)가 겹치면 잡고, 드문 이름(3줄 이하)이 겹치면 다른 공통 토큰이 더 있거나 그 줄이 탈락 줄이거나
+    최근 recent회차 줄이면서 제목 글자 유사도 0.2 이상일 때만 잡음(같은 회사의 다른 사건 오탐 억제). 흔한 이름은 세지 않음."""
+    toks = [rl_tokens(x[2]) for x in lines]
+    df = {}
+    for ts in toks:
+        for k in ts: df[k] = df.get(k, 0) + 1
+    last = sorted({int(x[0]) for x in lines})[-recent:] if lines else []
+    hits = []
+    for i, it in enumerate(items, 1):
+        head = str(it.get('headline') or '')
+        mine = rl_tokens(f"{head} {it.get('orig_title', '')}")
+        best = None
+        for (iss, kind, txt), ts in zip(lines, toks):
+            com = mine & ts
+            num = [k for k in com if k[0] == 'n' and df[k] <= 2]
+            name = [k for k in com if k[0] != 'n' and df[k] <= 3]
+            if not (num or (name and (len(com) >= 2 or kind == '탈락' or (int(iss) in last and rl_sim(head, txt) >= 0.2)))): continue
+            score = 2 * len(num) + 2 * len(name) + len(com)
+            if best is None or score > best[0]:
+                best = (score, iss, kind, txt, sorted(k[1].lstrip('!') for k in com))
+        if best: hits.append((i,) + best[1:])
+    return hits
+
+
 def check(path, quiet=False):
     st = now_state()
     start, cutoff = kst(st['start']), kst(st['cutoff'])
@@ -863,6 +925,13 @@ def check(path, quiet=False):
     if tot > 40: Wn.append(f'웹 호출 합계 {tot}회(상한 40)')
     if calls.get('본문', 0) > 25: Wn.append(f"본문 호출 {calls['본문']}회(상한 25)")
     if calls.get('보조', 0) > 15: Wn.append(f"보조 호출 {calls['보조']}회(상한 15)")
+    rl = runlog_lines()
+    if rl is None:
+        Wn.append('/tmp/ev/run_log_prev.md 없음: 최근 회차 수록·탈락 대조 생략(나.4대로 저장하면 대조함)')
+    else:
+        for n, iss, kind, txt, com in runlog_hits(items, rl):
+            Wn.append(f'[{n}] {str(items[n - 1].get("headline") or "")[:24]}: run_log 제{iss}호 {kind} 「{txt[:60]}」과 같은 사건일 수 있음'
+                      f'(공통 {", ".join(com)}) → 같은 사건이고 새 사실이 없으면 빼고 dropped에 "제{iss}호와 같은 사건", 새 단계면 followup true')
     if not quiet or E or Wn:
         print(f'검사: 항목 {len(items)}(핵심 {ncore}) | 오류 {len(E)} | 확인 {len(Wn)}')
         for m in E: print('오류', m)
