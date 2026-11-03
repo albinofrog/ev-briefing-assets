@@ -907,7 +907,7 @@ def render(path):
     if fails:
         push = '[실패] ' + ','.join(sorted(set(f.split(':')[0] for f in fails))) + ' ' + push
     if st.get('gdown'): push = '[경고] 구글 수집 중단 ' + push
-    nw = waiting_count(f'{W}/fb0')  # 준비 단계(가.3)가 받은 보드 사본 기준
+    nw = waiting_count(f'{W}/fb0')  # 준비 단계(프롬프트 나.3)가 받은 보드 사본 기준
     if nw: push = f'[승인 대기 {nw}] ' + push
     bu = board_url()
     push = push[:200 - (len(bu) + 9 if bu else 0)] + (f' | 제보·평가 {bu}' if bu else '')
