@@ -154,13 +154,23 @@ def rss_items(url, region=''):
     return out
 
 
+LIST_STATE = re.compile(r'([?&])(pageIndex|repCodeType|repCode|startDate|endDate|srchWord|period)=[^&]*')
+
+
+def clean_list_url(href):
+    """목록 페이지가 링크에 붙이는 검색 상태(쪽 번호·날짜 범위 등)를 지워 같은 기사가 날마다 다른 URL이 되지 않게 함."""
+    href = LIST_STATE.sub(r'\1', href)
+    href = re.sub(r'([?&])[?&]+', r'\1', href)
+    return re.sub(r'[?&]+$', '', href)
+
+
 def html_items(url, pattern):
     r = get(url)
     r.encoding = r.apparent_encoding or r.encoding
     rx = re.compile(pattern)
     out, seen = [], set()
     for m in re.finditer(r'<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', r.text, re.S | re.I):
-        href = urllib.parse.urljoin(url, html.unescape(m.group(1)))
+        href = clean_list_url(urllib.parse.urljoin(url, html.unescape(m.group(1))))
         title = re.sub(r'\s+', ' ', html.unescape(re.sub(r'<[^>]+>', ' ', m.group(2)))).strip()
         if not rx.search(href) or len(title) < 6 or href in seen:
             continue

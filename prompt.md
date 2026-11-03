@@ -32,7 +32,7 @@
 1. 검색 범위 확인(검색 충분성): `python3 /tmp/ev/build.py coverage`로 검색 주제(추적 검색어 절)·권역별 후보 현황을 봅니다. "주제 공백"이 있으면 rules.md 4절의 주제 공백 보강을 합니다. prep이 낸 수집 실패 목록(직접 확인 대상)도 4절대로 확인합니다. `/tmp/ev/pending_collect.txt`의 검색어(승인됐지만 아직 수집되지 않음)도 4절대로 찾습니다.
 2. 선별·본문 확인·판정: rules.md 2~5절대로 합니다. 판정마다 `/tmp/ev/decisions.tsv`에 한 줄씩 `후보번호<TAB>본문열람(y/n/실패)<TAB>결정(핵심/참고/제외/이월)<TAB>사유`를 적습니다. 점수 2 이상 구간 후보는 전부, 점수 1 이하 구간은 열었거나 실은 후보만 적습니다. 보강·실패 목록에서 더한 기사는 후보번호 대신 `x1`, `x2`…로 적습니다. 본문열람 y는 실제로 WebFetch로 연 경우만이며, 사유는 비우지 않습니다.
 3. 검토 마감: `coverage`를 다시 돌려 "미검토" 후보가 남았으면 마저 판정합니다. 예산이 모자라 열지 못한 관련도 1·2 후보만 `이월`로 적고 briefing.json `deferred`에 넣습니다. 그 밖의 후보를 이월로 넘기지 않습니다.
-4. 작성: `python3 /tmp/ev/build.py schema`로 형식을 확인하고 `/tmp/ev/briefing.json`을 씁니다(`calls`는 `본문`·`보조` 두 칸, `dropped` 주요 탈락 5건, `deferred`, `errors` 포함). 모든 항목에 `source_tier`(rules.md 3절), 본문을 확인한 관련도 1·2 항목에 `relevance_basis`(5절)를 넣습니다.
+4. 작성: `python3 /tmp/ev/build.py schema`로 형식을 확인하고 `/tmp/ev/briefing.json`을 씁니다(`calls`는 `본문`·`보조` 두 칸, `dropped` 주요 탈락 5건, `deferred`, `errors` 포함). 모든 항목에 `source_tier`(rules.md 3절), 본문을 확인한 관련도 1·2 항목에 `relevance_basis`(5절)를 넣습니다. 본문을 확인한 참고 항목도 본문이 보도자료·공시·정부 발표의 링크와 그 발표 날짜를 밝혔으면 추가 웹 호출 없이 `origin`에 넣습니다(날짜를 모르면 넣지 않음).
 5. `python3 /tmp/ev/build.py check /tmp/ev/briefing.json`을 실행해 오류를 모두 고칩니다. "제외"나 "ref"를 가리키는 오류는 그대로 따르고, "확인" 항목은 읽고 판단합니다. 같은 항목의 같은 오류가 세 번 반복되면 그 항목을 빼고 `errors`에 적습니다.
 6. `python3 /tmp/ev/build.py render /tmp/ev/briefing.json`을 실행하고, 1쪽 미리보기 이미지를 Read로 열어 글자가 깨지지 않았는지 봅니다.
 7. 수록이 있으면 render가 출력한 파일을 SendUserFile로 PDF, HTML 순서로 전달합니다. 파일이 HTML 하나뿐이면 그것만 전달합니다.

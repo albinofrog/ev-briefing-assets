@@ -14,11 +14,13 @@ GitHub Actions의 collect.py가 매시간 예약으로(예약이 자주 건너�
 - 모터그래프 | 한국 | rss | https://www.motorgraph.com/rss/allArticle.xml | 전체
 - 한국보험신문 | 한국 | rss | https://www.insnews.co.kr/rss/allArticle.xml |
 - 보험저널 | 한국 | rss | https://www.insjournal.co.kr/rss/allArticle.xml |
+- 대한민국 정책브리핑 | 한국 | html:/briefing/pressReleaseView\.do\?newsId=\d+ | https://www.korea.kr/briefing/pressReleaseList.do |
 - electrive | EU | rss | https://www.electrive.com/feed/ | 전체
 - electrive.net | EU | rss | https://www.electrive.net/feed/ | 전체
 - Handelsblatt 기업 | EU | rss | https://feeds.cms.handelsblatt.com/unternehmen |
 - Handelsblatt 정치 | EU | rss | https://feeds.cms.handelsblatt.com/politik |
 - kfz-betrieb | EU | rss | https://www.kfz-betrieb.vogel.de/rss/news.xml |
+- 영국 교통부 | EU | rss | https://www.gov.uk/search/news-and-communications.atom?organisations%5B%5D=department-for-transport |
 - Insurance Journal | 미국 | rss | https://www.insurancejournal.com/rss/news/national/ |
 - Electrek | 미국 | rss | https://electrek.co/feed/ | 전체
 - Repairer Driven News | 미국 | rss | https://www.repairerdrivennews.com/feed/ |
@@ -32,6 +34,7 @@ GitHub Actions의 collect.py가 매시간 예약으로(예약이 자주 건너�
 - Response | 일본 | rss | https://response.jp/rss/index.rdf |
 - 日刊工業新聞 | 일본 | rss | https://www.nikkan.co.jp/rss/nksrdf.rdf |
 - 日刊自動車新聞 | 일본 | html:/archives/\d+ | https://www.netdenjd.com/ | 전체
+- 일본 경제산업성 | 일본 | html:/press/20\d\d/\d\d/\d+\.html | https://www.meti.go.jp/press/index.html |
 
 ## B. 제목 필터 단어
 옵션이 비어 있는 목록은 제목에 아래 단어 중 하나가 있어야 수집합니다. 영문은 단어 경계로(단어 사이 공백은 하이픈도 허용), 나머지는 포함 여부로 봅니다(대소문자 무시).

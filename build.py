@@ -1340,9 +1340,26 @@ def watch_sections():
     """watchlist.md → [(절 제목, [검색어])]."""
     out, cur = [], None
     for ln in open(f'{W}/watchlist.md', encoding='utf-8'):
-        if ln.startswith('## '): cur = (ln[3:].strip(), []); out.append(cur)
+        if ln.startswith('## '): cur = (ln[3:].split('|')[0].strip(), []); out.append(cur)
         elif cur and ln.startswith('- '): cur[1].append(ln[2:].split('|')[0].strip())
     return out
+
+
+def watch_dom(ln):
+    """watchlist 줄 → '국내'(한국판) 또는 '국외'. 지역판 생략 시 collect.py edition()과 같은 규칙."""
+    p = [x.strip() for x in ln[2:].split('|')]
+    ed = p[1] if len(p) > 1 and p[1] else ''
+    if not ed:
+        q = p[0]
+        ed = 'JP:ja' if re.search('[\u3040-\u30ff]|価|中古', q) else 'KR:ko' if re.search('[가-힣]', q) else 'other'
+    return '국내' if ed == 'KR:ko' else '국외'
+
+
+def item_dom(o):
+    """수집 항목 → '국내'(한국) 또는 '국외'. 권역을 모르면 제목에 한글이 있으면 국내."""
+    r = region_of(o)
+    if r: return '국내' if r == '한국' else '국외'
+    return '국내' if re.search('[가-힣]', o.get('title', '')) else '국외'
 
 
 def read_decisions():
@@ -1394,7 +1411,15 @@ def coverage():
         g['srcs'] = {items[uhash(u)]['src'] for u in g['urls'] if uhash(u) in items}
         g['regions'] = {items[uhash(u)].get('region') or region_of(items[uhash(u)]) for u in g['urls'] if uhash(u) in items}
         g['inc'] = any(uhash(u) in inc for u in g['urls'])
+        g['doms'] = {item_dom(items[uhash(u)]) for u in g['urls'] if uhash(u) in items}
     secs = watch_sections()
+    cellq, refsec = {}, set()  # (대주제, 국내/국외) → 검색어, 관련도 3 중심 대주제(제목 줄 `| 참고`)
+    cur = None
+    for ln in open(f'{W}/watchlist.md', encoding='utf-8'):
+        if ln.startswith('## '):
+            cur = ln[3:].split('|')[0].strip()
+            if '참고' in ln[3:].partition('|')[2]: refsec.add(cur)
+        elif cur and ln.startswith('- '): cellq.setdefault((cur, watch_dom(ln)), []).append(ln[2:].split('|')[0].strip())
     rows, gaps = [], []
     for name, qs in secs:
         w = [status.get('watch', {}).get(q, {}) for q in qs]
@@ -1405,10 +1430,14 @@ def coverage():
         r = {'topic': name, 'queries': len(qs), 'failed': sum(1 for x in w if x and not x.get('ok')), 'zero': sum(1 for x in w if x.get('ok') and not x.get('fetched')),
              'cand': len(sel), 'cand_hi': len(hi), 'reviewed_hi': sum(1 for g in hi if done(g['id'])),
              'opened': sum(1 for g in sel if dec.get(g['id'], ('',))[0] == 'y'), 'included': sum(1 for g in sel if g['inc'])}
+        for dm in ('국내', '국외'):  # 대주제마다 국내·국외 칸을 따로 봄
+            c = [g for g in (sel if name in refsec else hi) if dm in g['doms']]  # `| 참고` 대주제는 점수와 관계없이 후보가 있으면 공백 아님
+            r[dm] = {'cand_hi': len(c), 'included': sum(1 for g in sel if g['inc'] and dm in g['doms'])}
+            if not c:
+                cell = f'{name}·{dm}'
+                filled = any(k.startswith('x') and f'[보강:{cell}]' in v[2] for k, v in dec.items())
+                gaps.append({'topic': cell, 'hints': cellq.get((name, dm), [])[:2] or [f'{dm} 검색어 없음: 주제 핵심어를 {dm} 언어로'], 'filled': filled})
         rows.append(r)
-        if not hi:
-            filled = any(k.startswith('x') and f'[보강:{name}]' in v[2] for k, v in dec.items())
-            gaps.append({'topic': name, 'hints': qs[:2], 'filled': filled})
     reg = []
     for rg in REGIONS:
         sel = [g for g in gs if rg in g['regions']]
@@ -1420,9 +1449,10 @@ def coverage():
     cov = {'topics': rows, 'regions': reg, 'gaps': gaps, 'cand_hi': len(hi_all), 'reviewed_hi': sum(1 for g in hi_all if done(g['id'])),
            'unreviewed_hi': [g['id'] for g in hi_all if not done(g['id'])], 'list_fail': lfail, 'watch_fail': wfail, 'opened_y': opened_y}
     json.dump(cov, open(f'{W}/coverage.json', 'w'), ensure_ascii=False)
-    print('주제 | 검색어(실패·0건) | 후보(점수2+) | 검토 | 본문 | 수록')
+    print('주제 | 검색어(실패·0건) | 후보(점수2+) | 검토 | 본문 | 수록 | 국내·국외 점수2+ 후보·수록')
     for r in rows:
-        print(f"  {r['topic']} | {r['queries']}({r['failed']}·{r['zero']}) | {r['cand']}({r['cand_hi']}) | {r['reviewed_hi']}/{r['cand_hi']} | {r['opened']} | {r['included']}")
+        print(f"  {r['topic']} | {r['queries']}({r['failed']}·{r['zero']}) | {r['cand']}({r['cand_hi']}) | {r['reviewed_hi']}/{r['cand_hi']} | {r['opened']} | {r['included']}"
+              + ''.join(f" | {dm} 후보 {r[dm]['cand_hi']}·수록 {r[dm]['included']}" for dm in ('국내', '국외')))
     print('권역 | 후보(점수2+) | 수록: ' + ', '.join(f"{x['region']} {x['cand']}({x['cand_hi']}) {x['included']}" for x in reg))
     print(f"점수 2 이상 후보 검토 {cov['reviewed_hi']}/{cov['cand_hi']}" + (f" · 미검토 {', '.join(cov['unreviewed_hi'][:15])}" if cov['unreviewed_hi'] and dec else ''))
     if lfail or wfail: print(f"수집 실패: 목록 {len(lfail)}·검색어 {len(wfail)}")
@@ -1475,14 +1505,15 @@ def scorecard(path):
         '출처12비율': pct(sum(1 for x in tiers if x in (1, 2)), len(its)), '자체판정2': sum(1 for x, i in zip(tiers, its) if not x and i.get('source_tier') == 2),
         '자체판정1': sum(1 for i in its if not auto_tier(i['url']) and own(i)),
         '핵심원출처': pct(sum(1 for i in core if ver(i)), len(core)), '관련12본문': pct(sum(1 for i in r12 if i.get('body_read')), len(r12)),
+        '참고원출처': pct(sum(1 for i in its if i['tier'] != 'core' and i.get('body_read') and ver(i)), sum(1 for i in its if i['tier'] != 'core' and i.get('body_read'))),  # 목표 없음(참고용)
         '관련12건수': len(r12), '유용비율': pct(fb['유용'], fb['평가']), 'FP': cnt('FP'), 'OVER': cnt('OVER'), 'UNDER': cnt('UNDER')}
     tg = targets()
     low = {'주제공백', '수집실패', '이월', '놓침', 'FP', 'OVER', 'UNDER', '자체판정2', '자체판정1'}
     miss_t = [k for k, v in tg.items() if sc.get(k) is not None and (sc[k] > v if k in low else sc[k] < v)]
-    axis = {'검색 충분성': ['검토율', '주제공백', '수집실패', '이월', '놓침'], '출처 신뢰성': ['출처12비율', '자체판정2', '자체판정1', '핵심원출처', '관련12본문'],
+    axis = {'검색 충분성': ['검토율', '주제공백', '수집실패', '이월', '놓침'], '출처 신뢰성': ['출처12비율', '자체판정2', '자체판정1', '핵심원출처', '관련12본문', '참고원출처'],
             '문서 관련성': ['관련12건수', '유용비율', 'FP', 'OVER', 'UNDER']}
     issue = st['issue'] + (1 if its else 0)
-    f = lambda k: '-' if sc[k] is None else (f'{sc[k]}%' if k in ('검토율', '출처12비율', '핵심원출처', '관련12본문', '유용비율') else str(sc[k]))
+    f = lambda k: '-' if sc[k] is None else (f'{sc[k]}%' if k in ('검토율', '출처12비율', '핵심원출처', '관련12본문', '참고원출처', '유용비율') else str(sc[k]))
     line = (f"{kst(st['start']):%Y-%m-%d} | {issue} | 핵심 {len(core)} 참고 {len(its) - len(core)} | 웹 {calls} | 평가 {fb['평가']} 유용 {fb['유용']} | "
             + ' | '.join(a + ' ' + ' '.join(f'{k} {f(k)}' for k in ks) for a, ks in axis.items())
             + f" | 미달 {','.join(miss_t) or '-'} | 기여 " + (';'.join(f'{k}:{v}' for k, v in sorted(contrib.items())) or '-'))
