@@ -1639,7 +1639,7 @@ def scorecard(path):
         '관련12건수': len(r12), '유용비율': pct(fb['유용'], fb['평가']), 'FP': cnt('FP'), 'OVER': cnt('OVER'), 'UNDER': cnt('UNDER'),
         '중복경고': len(rlw), '중복채택': rl_take, '전달후발견': sum(1 for e in d.get('errors', []) if str(e).startswith('전달 후 발견'))}  # 앞 둘·전달후발견은 목표 없음(대조 품질·재발 관찰용)
     tg = targets()
-    low = {'주제공백', '수집실패', '이월', '놓침', 'FP', 'OVER', 'UNDER', '자체판정2', '자체판정1'}
+    low = {'주제공백', '수집실패', '이월', '놓침', 'FP', 'OVER', 'UNDER', '자체판정2', '자체판정1', '전달후발견'}
     miss_t = [k for k, v in tg.items() if sc.get(k) is not None and (sc[k] > v if k in low else sc[k] < v)]
     axis = {'검색 충분성': ['검토율', '주제공백', '수집실패', '이월', '놓침'], '출처 신뢰성': ['출처12비율', '자체판정2', '자체판정1', '핵심원출처', '관련12본문', '참고원출처'],
             '문서 관련성': ['관련12건수', '유용비율', 'FP', 'OVER', 'UNDER', '중복경고', '중복채택', '전달후발견']}
@@ -1793,6 +1793,29 @@ def apply_group(edits, files=PATCHABLE, strict=False):
     return ('ok' if done else 'already' if back else 'none'), '', back, touched
 
 
+RL_FIXTURE = [('013', '수록', 'CATL, GBA 배터리 여권 시범  | 핵심 R2 | auto.gasgoo.com'), ('013', '수록', 'CATL, 3분기 순이익 | 참고 R3 | cnevpost.com'),
+              ('014', '수록', 'CATL·Chery, 두 번째 전지 | 참고 R3 | auto.gasgoo.com'), ('014', '수록', 'CATL 하이난 교환 | 참고 R3 | i.ifeng.com'),
+              ('016', '수록', '니오, 누적 충전·교환소 9602곳  | 참고 R2 | auto.gasgoo.com'), ('016', '수록', '베이징·CATL 교환망 | 참고 R2 | cnevpost.com'),
+              ('017', '수록', 'Aampere, 첫 중고 EV 잔존가 | 참고 R1 | www.autonext.co'),
+              ('019', '탈락', '米中古EV市場、販売比率3.3% | 장부 중복(10-16 Cox 4만7862대)'),
+              ('022', '탈락', '500,000 EV Battery H | Aviloo 조사 09-04 이미 보도'),
+              ('024', '수록', '영국 BVRLA, 3년 넘은 중고 E | 참고 R2 | brokernews.co.uk'), ('024', '수록', 'GM Financial·Ally, 3 | 참고 R2 | www.autofinancenews.net')]
+RL_PROBE = [({'headline': 'Aviloo, 중고 EV 50만 건 배터리 SoH 보고서 공개', 'orig_title': 'Aviloo: 500.000 Batterietests'}, '022'),
+            ({'headline': 'WiWo, Aampere 중고 EV 잔존가치 지수 보도', 'orig_title': 'Gebrauchte Elektroautos: Aampere-Index'}, '017'),
+            ({'headline': '미국 9월 중고 EV 판매 비중 3.3%', 'orig_title': 'Used EV share hits 3.3% in September'}, '019'),
+            ({'headline': 'CATL, 하이난 전역 초콜릿 배터리 교환소', 'orig_title': ''}, None),
+            ({'headline': 'GM, 운전 데이터 보험사 판매 의혹', 'orig_title': 'GM settles over driver data sales'}, None)]
+
+
+def selftest():
+    """이전 회차 중복 대조(runlog_hits) 고정 사례 검사: 실제 재전달 3건(제020·021·028호)은 잡고, 흔한 이름·같은 회사 다른 사건은 안 잡음.
+    gate가 code 개선안 반영 전에 돌림(eval/test_patch.py 11과 같은 사례). 종료 0이면 통과."""
+    got = {n: iss for n, iss, *_ in runlog_hits([x for x, _ in RL_PROBE], RL_FIXTURE)}
+    bad = [f"{x['headline'][:20]}: 기대 {want or '없음'}, 결과 {got.get(i) or '없음'}" for i, (x, want) in enumerate(RL_PROBE, 1) if got.get(i) != want]
+    print('selftest 중복 대조: ' + ('통과' if not bad else '실패 ' + '; '.join(bad)))
+    return not bad
+
+
 def gate(ref):
     """새 수정이 들어간 build.py·sources.md·watchlist.md로 평가 세트 prep 회귀(eval/score.py)를 /tmp/evgate에서 돌림. (통과, 마지막 줄)"""
     import shutil
@@ -1809,6 +1832,9 @@ def gate(ref):
             err = curl(s, f'{src}/{s}')
             if err: return False, f'자산 받기 실패 {s}: {err}'
     open(f'{src}/build.py', 'w', encoding='utf-8').write(open(f'{W}/build.py', encoding='utf-8').read())
+    st = subprocess.run([sys.executable, f'{src}/build.py', 'selftest'], capture_output=True, text=True, env={**os.environ, 'EV_W': src}, timeout=120)
+    if st.returncode != 0:
+        return False, (st.stdout + st.stderr).strip().splitlines()[-1] if (st.stdout + st.stderr).strip() else 'selftest 실패'
     r = subprocess.run([sys.executable, f'{src}/eval/score.py', '--build', f'{src}/build.py'], capture_output=True, text=True,
                        env={**os.environ, 'EV_W': f'{G}/w'}, timeout=600)
     tail = [l for l in (r.stdout + r.stderr).splitlines() if l.strip()]
@@ -2064,4 +2090,5 @@ if __name__ == '__main__':
     elif a[0] == 'coverage': coverage()
     elif a[0] == 'snapshot': snapshot(a[1])
     elif a[0] == 'cases': cases(a[1], a[2], a[3])
+    elif a[0] == 'selftest': sys.exit(0 if selftest() else 1)
     else: sys.exit(__doc__)
