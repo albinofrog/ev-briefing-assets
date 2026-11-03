@@ -27,6 +27,7 @@
   자가개선(전달 뒤):
   python3 build.py promote [FILE]  lessons.md(기본 /tmp/ev/lessons.md)에서 9절 승격 임계에 닿은 교훈과 임계 미달인 제안을 출력
   python3 build.py rated           /tmp/ev/metrics.md 최근 발행 10회차(핵심·참고 합 1 이상인 줄) 평가 칸 합
+  python3 build.py effect DIR N    반영 N(metrics.md 줄 번호) 전후 발행 5회차의 유용비율·FP·OVER·UNDER를 실은 회차 기준·평가 건수 대비로 비교(DIR: 보드 items·feedback)
   python3 build.py probe           이번 회차 놓침 탐지 검색어 4개(rules.md 9절에서 metrics.md 회차 수로 순환, 검색어 언어로 연월을 붙임)
   python3 build.py board FILE [nodeliver]   briefing.json → 피드백 보드 db 쓰기 목록(/tmp/ev/board.json). 전달 실패면 nodeliver(항목 제외)
   python3 build.py guard OLD NEW   rules.md 고정 줄(사업 맥락·금지 항목·예산·금지 출처)이 바뀌었으면 종료 1
@@ -1819,6 +1820,33 @@ def promote(path):
     if bad: print('형식 오류(관찰 수를 못 읽음, 오류에 적고 고침):'); [print('  ' + x) for x in bad]
 
 
+def effect(d, n):
+    """반영 n(metrics.md 줄 번호) 전후 발행 5회차의 사용자 평가 지표를, 평가를 받은 회차가 아니라 기사를 실은 회차 기준으로 평가 건수 대비 비교."""
+    ls = [l for l in (open(f'{W}/metrics.md', encoding='utf-8').read().splitlines() if os.path.exists(f'{W}/metrics.md') else [])
+          if re.match(r'\d{4}-\d\d-\d\d \| ', l)]
+    pub = set(pub_lines())
+    iss = lambda l: int(l.split('|')[1])
+    pre = [iss(l) for i, l in enumerate(ls, 1) if i <= n and l in pub][-5:]   # 줄 n은 반영 전 회차
+    post = [iss(l) for i, l in enumerate(ls, 1) if i > n and l in pub][:5]
+    items = {o['_id']: o for o in doc_rows(d, 'items')}
+    vmap = {'noise': 'FP', 'should_drop': 'FP', 'should_ref': 'OVER', 'should_core': 'UNDER'}
+    cnt = {}
+    for f in doc_rows(d, 'feedback'):
+        it, v = items.get(f['_id']), f.get('verdict')
+        if not it or v not in ('useful', *vmap): continue
+        c = cnt.setdefault(it.get('issue'), {'평가': 0, '유용': 0, 'FP': 0, 'OVER': 0, 'UNDER': 0})
+        c['평가'] += 1; c['유용' if v == 'useful' else vmap[v]] += 1
+    tot = lambda w: {k: sum(cnt.get(x, {}).get(k, 0) for x in w) for k in ('평가', '유용', 'FP', 'OVER', 'UNDER')}
+    a, b = tot(pre), tot(post)
+    rate = lambda t, k: f"{100 * t[k] / t['평가']:.1f}%" if t['평가'] else '-'
+    print(f"반영 {n}: 전 {pre} 평가 {a['평가']}건 | 후 {post} 평가 {b['평가']}건")
+    for k, lab in (('유용', '유용비율'), ('FP', 'FP'), ('OVER', 'OVER'), ('UNDER', 'UNDER')):
+        print(f"  {lab}: {rate(a, k)}→{rate(b, k)} ({a[k]}/{a['평가']}→{b[k]}/{b['평가']})")
+    if len(post) < 5: print('판정: 대기(반영 뒤 발행 5회차 전)')
+    elif min(a['평가'], b['평가']) < 5: print('판정: 대기(구간 평가 5건 미만, 반영 뒤 발행 10회차가 지나도 그러면 측정 불가(평가 부족))')
+    else: print('판정: 기록 가능(유용비율은 오를수록, FP·OVER·UNDER는 내릴수록 효과)')
+
+
 def reapply_assets():
     """prep이 main에서 새로 받은 sources.md·watchlist.md에 적용 중인 수정을 다시 넣음."""
     out = []
@@ -1862,6 +1890,7 @@ if __name__ == '__main__':
         patch_cmd(r[0] if r else 'main', k, r[1] if k and len(r) > 1 else None, au)
     elif a[0] == 'promote': promote(a[1] if len(a) > 1 else f'{W}/lessons.md')
     elif a[0] == 'rated': print(rated())
+    elif a[0] == 'effect': effect(a[1], int(a[2]))
     elif a[0] == 'feedback': feedback(a[1], a[2] if len(a) > 2 else '')
     elif a[0] == 'trace': trace(a[1], a[2:])
     elif a[0] == 'scorecard': scorecard(a[1])

@@ -39,7 +39,7 @@
 8. 장부 기록: 7번 전달이 성공한 경우에만 합니다(수록 0건이면 건너뜀). 먼저 `python3 /tmp/ev/build.py ledger board`의 결과를 ArtifactData `batch`로 보드 `ledger`에 씁니다(주 장부). 그다음 백업으로 `/tmp/ev/ledger.txt`의 줄을 메모리 `sent.md`에 추가합니다. 파일이 없으면 `memory_write`(if_version `new`)로 만들고, 있으면 `memory_read` 후 `memory_append`로 추가하며, 한 번에 5줄 이하씩 씁니다. check가 "trim sent"를 안내했으면 추가하기 전에 `trim sent` 결과로 덮어씁니다. 추가한 뒤 다시 읽어 ledger.txt의 줄이 모두 있는지 확인합니다. 보드 쓰기가 성공했으면 메모리 줄 일부가 빠져도 장부 확인은 성공으로 보고 빠진 줄을 오류에 적습니다. 보드와 메모리 모두 실패한 경우만 장부 실패입니다. 같은 조건에서 평가 세트용으로, `/tmp/ev/snap_id.txt`의 문서 id로 보드 `snapshots`를 `get`하고(없으면 새로 만듦) 그 version을 if_version으로 `/tmp/ev/snap_doc.json`을 `set`(file_path)합니다. 이 쓰기가 실패해도 오류에만 적습니다.
 9. 상태 기록: 7번 전달이 성공했거나 수록이 0건인 경우에만, 메모리 `state.md`를 `/tmp/ev/memstate_next.md` 내용으로 덮어씁니다. 전달에 실패했으면 8·9번을 하지 않습니다(다음 회차가 같은 후보를 다시 봄).
 10. `/tmp/ev/runlog_block.md`를 메모리 `run_log.md` 끝에 `memory_append`합니다. 전달·장부 실패가 있었으면 블록의 "오류:" 줄에 적습니다. run_log.md가 30KB를 넘으면 내용을 `/tmp/ev/run_log.md`에 저장하고 `trim log` 결과로 덮어씁니다.
-11. PushNotification으로 `/tmp/ev/push.txt` 내용을 보냅니다. 전달이나 장부 확인에 실패했으면 보내기 전에 `python3 /tmp/ev/build.py failpush 전달` 또는 `failpush 장부`를 실행합니다. 이 알림은 라절보다 먼저 보냅니다. `improve`가 off가 아니고 `python3 /tmp/ev/build.py rated`가 0을 출력하면 문구 끝에 ` | 놓친 기사는 보드에 URL 제보`를 붙입니다.
+11. PushNotification으로 `/tmp/ev/push.txt` 내용을 보냅니다. 전달이나 장부 확인에 실패했으면 보내기 전에 `python3 /tmp/ev/build.py failpush 전달` 또는 `failpush 장부`를 실행합니다. 이 알림은 라절보다 먼저 보냅니다. `improve`가 off가 아니면 문구 끝에 ` | 놓친 기사는 보드에 URL 제보`를 붙입니다.
 
 ## 라. 자가개선 (알림 뒤)
 `/tmp/ev/improve.md`를 읽고 그대로 따릅니다. 그 파일 안의 "9절"은 rules.md 9절, "가.3" 등은 이 프롬프트의 절입니다.
