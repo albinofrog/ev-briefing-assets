@@ -24,7 +24,7 @@ UA = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, 
 BING = 'https://www.bing.com/news/search?q={q}&format=RSS&qft=interval%3d%228%22'
 GOOG = 'https://news.google.com/rss/search?q={q}&hl={hl}&gl={gl}&ceid={ceid}'
 GN_WHEN = os.environ.get('GN_WHEN', '2d')
-FRESH_H = 72  # 게재 시각이 이보다 오래된 결과는 수집하지 않음
+FRESH_H = 168  # 게재 시각이 이보다 오래된 결과는 수집하지 않음(7일: 늦게 잡힌 관련도 1 기사를 rules.md 3절 예외로 볼 수 있게)
 CAP = 15  # 검색어 하나가 한 번 수집에 넣는 새 항목 상한(최신순)
 DECODE_BUDGET = int(os.environ.get('DECODE_BUDGET', '300'))  # 한 번 수집에서 원주소 변환에 쓰는 최대 초. 넘으면 남은 것은 다음 수집으로
 # 구매 가이드·해설형 제목(뉴스 아님). 검색 결과에만 적용
@@ -63,7 +63,9 @@ def parse_sources(path):
         p = [x.strip() for x in ln[2:].split('|')]
         if not p[3].startswith('http'):
             continue
-        feeds.append({'name': p[0], 'region': p[1], 'how': p[2], 'url': p[3], 'all': len(p) > 4 and '전체' in p[4]})
+        opt = p[4] if len(p) > 4 else ''
+        feeds.append({'name': p[0], 'region': p[1], 'how': p[2], 'url': p[3], 'all': '전체' in opt,
+                      'bold': '굵은제목' in opt, 'ctx': '차량문맥' in opt})
     words = []
     for ln in b.splitlines()[1:]:
         if ln.startswith('옵션') or not ln.strip():
@@ -164,14 +166,24 @@ def clean_list_url(href):
     return re.sub(r'[?&]+$', '', href)
 
 
-def html_items(url, pattern):
+# 정부 보도자료처럼 넓은 목록에서 차량·배터리 문맥이 제목에 있어야 수집(옵션 `차량문맥`)
+CTX = re.compile(r'전기차|전기자동차|자동차|차량|모빌리티|배터리|이차전지|2차전지|충전|電気自動車|電動車|自動車|車両|蓄電池|バッテリー|'
+                 r'(?<![A-Za-z])(EV|EVs|electric vehicles?|vehicles?|batter(y|ies)|charging|cars?)(?![A-Za-z])', re.I)
+
+
+def html_items(url, pattern, bold=False):
+    """목록 페이지 링크 → 항목. bold면 링크 안 <strong>/<b> 글자를 제목으로 씀(링크에 요약문이 함께 든 목록용)."""
     r = get(url)
     r.encoding = r.apparent_encoding or r.encoding
     rx = re.compile(pattern)
     out, seen = [], set()
     for m in re.finditer(r'<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', r.text, re.S | re.I):
         href = clean_list_url(urllib.parse.urljoin(url, html.unescape(m.group(1))))
-        title = re.sub(r'\s+', ' ', html.unescape(re.sub(r'<[^>]+>', ' ', m.group(2)))).strip()
+        inner = m.group(2)
+        if bold:
+            b = re.search(r'<(strong|b)\b[^>]*>(.*?)</\1>', inner, re.S | re.I)
+            if b: inner = b.group(2)
+        title = re.sub(r'\s+', ' ', html.unescape(re.sub(r'<[^>]+>', ' ', inner))).strip()
         if not rx.search(href) or len(title) < 6 or href in seen:
             continue
         seen.add(href)
@@ -268,10 +280,10 @@ def main(out):
         bfill = backfill or f['name'] not in seen_src  # 새로 추가한 목록의 첫 수집도 기존 항목으로 처리
         st = {'ok': False, 'fetched': 0, 'matched': 0, 'new': 0, 'error': ''}
         try:
-            items = rss_items(f['url'], f['region']) if f['how'] == 'rss' else html_items(f['url'], f['how'].split(':', 1)[1])
+            items = rss_items(f['url'], f['region']) if f['how'] == 'rss' else html_items(f['url'], f['how'].split(':', 1)[1], f.get('bold'))
             st['ok'], st['fetched'] = True, len(items)
             for it in items:
-                if f['all'] or ok(it['title']):
+                if (f['all'] or ok(it['title'])) and (not f.get('ctx') or CTX.search(it['title'])):
                     st['matched'] += 1
                     fs = it['pub'] if bfill and it['pub'] and it['pub'] <= iso(NOW) else iso(NOW)
                     st['new'] += add(f['name'], f['region'], 'list', it, fs, bfill and not it['pub'])

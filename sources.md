@@ -5,7 +5,7 @@ GitHub Actions의 collect.py가 매시간 예약으로(예약이 자주 건너�
 ## A. 목록
 형식: `- 이름 | 권역 | 방식 | URL | 옵션`
 - 방식: `rss` 또는 `html:<기사 링크 정규식>`(목록 페이지의 기사 링크를 뽑음)
-- 옵션: `전체`는 제목 필터 없이 모두 수집, 비우면 B절 단어가 제목에 있는 항목만 수집
+- 옵션: `전체`는 제목 필터 없이 모두 수집, 비우면 B절 단어가 제목에 있는 항목만 수집. `굵은제목`은 html 목록 링크 안의 굵은 글자만 제목으로 씀(요약문이 함께 든 목록), `차량문맥`은 제목에 차량·배터리 단어도 있어야 수집(정부 보도자료처럼 넓은 목록)
 
 - 전기신문 | 한국 | rss | https://www.electimes.com/rss/allArticle.xml |
 - 디일렉 | 한국 | rss | https://www.thelec.kr/rss/allArticle.xml |
@@ -14,7 +14,7 @@ GitHub Actions의 collect.py가 매시간 예약으로(예약이 자주 건너�
 - 모터그래프 | 한국 | rss | https://www.motorgraph.com/rss/allArticle.xml | 전체
 - 한국보험신문 | 한국 | rss | https://www.insnews.co.kr/rss/allArticle.xml |
 - 보험저널 | 한국 | rss | https://www.insjournal.co.kr/rss/allArticle.xml |
-- 대한민국 정책브리핑 | 한국 | html:/briefing/pressReleaseView\.do\?newsId=\d+ | https://www.korea.kr/briefing/pressReleaseList.do |
+- 대한민국 정책브리핑 | 한국 | html:/briefing/pressReleaseView\.do\?newsId=\d+ | https://www.korea.kr/briefing/pressReleaseList.do | 굵은제목 차량문맥
 - electrive | EU | rss | https://www.electrive.com/feed/ | 전체
 - electrive.net | EU | rss | https://www.electrive.net/feed/ | 전체
 - Handelsblatt 기업 | EU | rss | https://feeds.cms.handelsblatt.com/unternehmen |
@@ -34,7 +34,7 @@ GitHub Actions의 collect.py가 매시간 예약으로(예약이 자주 건너�
 - Response | 일본 | rss | https://response.jp/rss/index.rdf |
 - 日刊工業新聞 | 일본 | rss | https://www.nikkan.co.jp/rss/nksrdf.rdf |
 - 日刊自動車新聞 | 일본 | html:/archives/\d+ | https://www.netdenjd.com/ | 전체
-- 일본 경제산업성 | 일본 | html:/press/20\d\d/\d\d/\d+\.html | https://www.meti.go.jp/press/index.html |
+- 일본 경제산업성 | 일본 | html:/press/20\d\d/\d\d/\d+\.html | https://www.meti.go.jp/press/index.html | 차량문맥
 
 ## B. 제목 필터 단어
 옵션이 비어 있는 목록은 제목에 아래 단어 중 하나가 있어야 수집합니다. 영문은 단어 경계로(단어 사이 공백은 하이픈도 허용), 나머지는 포함 여부로 봅니다(대소문자 무시).

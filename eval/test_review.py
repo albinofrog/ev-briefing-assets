@@ -235,9 +235,9 @@ check('관찰 수 "2회"·"관찰 3회" 표기도 읽음', 'L7 | code | OPS:z | 
 check('관찰 수를 못 읽는 줄은 형식 오류로 출력', '형식 오류' in o7 and 'L5 관찰 수 칸' in o7, o7)
 check('일반 임계 2 유지', 'L6 | code | OPS:x | 관찰 2회(임계 2)' in up, o)
 t = open(B, encoding='utf-8').read(); p = open(f'{REPO}/prompt.md', encoding='utf-8').read()
-check('푸시·리포트 제보 안내', "' | 제보·평가 {bu}'" in t and '놓친 기사 URL 제보' in t and '놓친 기사는 보드에 URL 제보' in p and '보드 평가 필요' not in p)
-# 푸시 길이 상한: 접미사 길이와 예약분 일치
-check('푸시 접미사 예약 길이 일치', len(' | 제보·평가 ') == 9)
+check('푸시·리포트 제보 안내', "' | 놓친 기사 제보·평가 {bu}'" in t and '놓친 기사 URL 제보' in t and '놓친 기사 제보 안내와 보드 링크는 render가' in p and '보드 평가 필요' not in p)
+# 푸시 길이 상한: 접미사를 포함해 200자 안에 맞춤(프롬프트가 안내를 따로 붙이지 않음)
+check('푸시 접미사 예약 길이 일치', 'push = push[:200 - len(tail)] + tail' in t and '놓친 기사는 보드에 URL 제보' not in p)
 
 # ── 4. 제외·발견 전용 목록: check·prep이 sources.md E절(수집기와 같은 목록)을 씀
 import ast
@@ -358,5 +358,36 @@ keepers = ['보험연, 전기차 배터리 정보, 차보험료·보상에도 �
 words = [w.strip() for w in tx.split(',') if w.strip()]
 check('K 스팸·시장조사 제목은 제외 단어에 걸림', all(any(w in t.lower() for w in words) for t in spam))
 check('K 실제 수록 기사 제목은 걸리지 않음', not any(any(w in t.lower() for w in words) for t in keepers))
+
+# ── L. 2026-11-03 적대적 검증 반영분(정규식 \b, 본문 제목 대조, 목록 굵은 제목·차량 문맥, effect 판정 유예)
+W = setup(); os.environ['EV_W'] = W
+spec = importlib.util.spec_from_file_location('b_l', B); bl = importlib.util.module_from_spec(spec); spec.loader.exec_module(bl)
+check('L 점수 정규식에 백스페이스 없음', not any('\x08' in getattr(bl, n).pattern for n in ('R1', 'R2', 'BROAD', 'EXPL')))
+sc = lambda x: bl.score_item({'title': x, 'url': 'https://x.com/a'})[0]
+check('L lease·BMS·在役检测·Batteriepass 점수', sc('EV lease prices fall') == 2 and sc('OEM restricts BMS access for EV') == 3
+      and sc('电动汽车动力蓄电池在役检测试验方法国家标准发布') == 3 and sc('EU-Batteriepass kommt') == 2)
+check('L 본문 제목 대조', bl.title_gap('정부, 이차전지 규제합리화 18개 과제', '현대차, 인증중고차 이전 차주 운전점수 공개')
+      and not bl.title_gap('Used EV prices climb 9.8% in September', 'Used EV prices climb 9.8% in September, iSeeCars says'))
+sys.path.insert(0, REPO)
+try:
+    import types, collect as cl
+    html_ = '<a href="/briefing/pressReleaseView.do?newsId=1&pageIndex=1&startDate=2025-11-03"><strong>전기차 배터리 성능평가 제도 시행</strong><span>김장 요약</span></a>'
+    cl.get = lambda u: types.SimpleNamespace(text=html_, apparent_encoding='utf-8', encoding='utf-8')
+    it = cl.html_items('https://www.korea.kr/briefing/pressReleaseList.do', r'/briefing/pressReleaseView\.do\?newsId=\d+', True)
+    check('L 목록 굵은 제목·링크 정리', it == [{'title': '전기차 배터리 성능평가 제도 시행', 'url': 'https://www.korea.kr/briefing/pressReleaseView.do?newsId=1', 'pub': None}], it)
+    check('L 차량 문맥', bool(cl.CTX.search('EV向け蓄電池の補助金')) and not cl.CTX.search('GX地域共創補助金を採択しました'))
+except ImportError as e:
+    print(f'SKIP L collect.py({e}: feedparser·requests 없음)')
+ml = ''.join(f'2026-10-{d:02d} | {k} | 핵심 1 참고 1 | 웹 1 | 평가 0 유용 0 | 기여 -\n' for k, d in zip(range(1, 13), range(1, 13)))
+open(f'{W}/metrics.md', 'w').write(ml)
+os.makedirs(f'{W}/fb/items'); os.makedirs(f'{W}/fb/feedback')
+for k in range(1, 13):
+    for j in range(2):
+        json.dump({'id': f'i{k}{j}', 'data': {'issue': k, 'tier': 'ref'}}, open(f'{W}/fb/items/i{k}{j}.json', 'w'))
+        json.dump({'id': f'i{k}{j}', 'data': {'verdict': 'useful' if j else 'noise'}}, open(f'{W}/fb/feedback/i{k}{j}.json', 'w'))
+c, o = run(W, 'effect', f'{W}/fb', '3')
+check('L effect 기록 가능(후 구간 뒤 3회차 지남)', '기록 가능' in o and '전 [1, 2, 3]' in o and '후 [4, 5, 6, 7, 8]' in o, o)
+c, o = run(W, 'effect', f'{W}/fb', '5')
+check('L effect 평가 유예(후 구간 뒤 2회차)', '평가 유예' in o, o)
 
 print(f'\n{fails} failed'); sys.exit(1 if fails else 0)

@@ -57,7 +57,7 @@ AX_LONG = {1: 'EV·배터리 시장 지표', 2: '정책·규제', 3: '중고 EV�
 REGIONS = ['한국', 'EU', '미국', '중국', '일본']
 BLOCKED = ['msn.com', 'naver.com', 'daum.net', 'yahoo.com', 'yahoo.co.jp', 'sina.com.cn', 'sina.cn', '163.com',
            'sohu.com', 'qq.com', 'bing.com', 'news.google.com', 'eletric-vehicles.com', 'infoseek.co.jp']
-BANNED = r'시사|전망|기회|위협|보인다|예상|주목|당사(?!자)'
+BANNED = r'시사|전망|기회|위협|보인다|예상|주목|당사(?!자)|수혜|호재|악재|타격|기대감|우려|청신호|빨간불'
 WEEK = '월화수목금토일'
 
 ASSETS = [('template.html', f'{W}/template.html'), ('sources.md', f'{W}/sources.md'), ('watchlist.md', f'{W}/watchlist.md'),
@@ -195,11 +195,14 @@ def prep():
         newest = max(newest, o['first_seen'])
         carried = o['key'] in dfr
         if not carried and (o.get('bf') or o['first_seen'][:19] <= wm[:19].replace('Z', '')): continue  # bf: 첫 수집 때 발행 시각 없이 잡힌 기존 항목
-        if o['pub'] and o['pub'][:19] < lo: continue
+        old = bool(o['pub']) and o['pub'][:19] < lo
+        # 기준 이전이라도 7일 안이면 이월 항목과, 제목이 관련도 1로 보이는 항목은 남김(rules.md 3절 early_public 예외 대상)
+        early = old and not carried and o['pub'][:19] >= hlo and bool(R1.search(unicodedata.normalize('NFKC', o['title'])))
+        if old and not early and not (carried and o['pub'][:19] >= hlo): continue
         ud = url_date(o['url'])
-        if not carried and ud and ud < kst(st['cutoff']).date() - dt.timedelta(days=1): continue  # URL 날짜가 기준보다 이름
+        if not carried and not early and ud and ud < kst(st['cutoff']).date() - dt.timedelta(days=1): continue  # URL 날짜가 기준보다 이름
         if uhash(o['url']) in seen: continue
-        o['title'] = ('[이월] ' if carried else '') + clean_title(o['title'])
+        o['title'] = ('[이월] ' if carried else '[기준 이전 7일] ' if early else '') + clean_title(o['title'])
         cands.append(o)
     ck = {o['key'] for o in cands}
     groups = cluster(cands, sent if isinstance(sent, list) else [], [h for h in hist if h['key'] not in ck])
@@ -276,23 +279,23 @@ def prep():
 
 
 S = r'[\s\-]'  # 영문 단어 사이 공백·하이픈
-R1 = re.compile(r'\bSOH\b|state' + S + 'of' + S + 'health|battery' + S + '(health|score|check|test|certificate|report|data|passport data)|\bBMS\b|'
+R1 = re.compile(r'\bSOH\b|state' + S + 'of' + S + 'health|battery' + S + r'(health|score|check|test|certificate|report|data|passport data)|\bBMS\b|'
                 r'배터리 (상태|건강|점수|진단|인증|데이터|성능\s?(평가|인증|점검)|수명\s?(평가|예측|진단))|잔존\s?수명|안전지수|성능점검|'
                 r'잔존가치|잔가|감가|residual' + S + 'values?|retains?' + S + '(their |its )?value|depreciation|(used' + S + '|second' + S + 'hand )?(EV|electric' + S + 'vehicle)s?' + S + 'values?|'
                 r'Restwert|Wertverlust|残価|残存価値|減価|\bOBD\b|data' + S + 'access|Data' + S + 'Act|right' + S + 'to' + S + 'repair|in' + S + 'vehicle' + S + 'data|'
                 r'수리권|데이터 개방|차량 데이터|자동차 데이터|vehicle' + S + 'data|Fahrzeugdaten|Datenzugang|汽车数据|车辆数据|車両データ|'
-                r'电池健康|电池检测|(バッテリー|(?<!蓄)電池)の?(診断|状態|劣化)|電池診断|Batterie(zustand|zertifikat|gesundheit|test|check)|'
+                r'电池健康|电池检测|在役检测|动力蓄?电池.{0,6}(检测|评估)|(バッテリー|(?<!蓄)電池)の?(診断|状態|劣化)|電池診断|Batterie(zustand|zertifikat|gesundheit|test|check)|'
                 r'degradation|(lose|lost|loses|retain)s?' + S + r'(about |only )?[\d.]+%' + S + '(of|per)|capacity' + S + '(loss|fade)|batter(y|ies)' + S + '(degrade|degradation|durability)|durability|'
                 r'배터리 열화|电池衰减|容量衰减|劣化率', re.I)
-R2 = re.compile(r'passport|여권|护照|数字身份证|이력\s?관리|溯源|second' + S + 'life|재사용|재제조|사용후|사용 후 배터리|은퇴(한)? 배터리|退役电池|换电|battery' + S + 'swap|배터리 교환|recycl|回收|재활용|リサイクル|'
+R2 = re.compile(r'passport|Batteriepass|バッテリーパスポート|여권|护照|数字身份证|이력\s?관리|溯源|second' + S + 'life|재사용|재제조|사용후|사용 후 배터리|은퇴(한)? 배터리|退役电池|换电|battery' + S + 'swap|배터리 교환|recycl|回收|재활용|リサイクル|'
                 r'used' + S + r'(ev|car|electric|vehicle)|second[\s\-]?hand|pre' + S + '?owned|remarketing|중고|二手|中古|Gebraucht|保值|insurance|insurer|보험|손해율|车险|保険|Versicherung|'
-                r'diagnos|진단|telematics|텔레매틱스|connected' + S + 'car|\blease\b|\bleasing\b|리스 만기|리스사|换电站', re.I)
+                r'diagnos|진단|telematics|텔레매틱스|connected' + S + r'car|\blease\b|\bleasing\b|리스 만기|리스사|换电站', re.I)
 # 자동차 문맥 없이 쓰이면 다른 업계 뉴스까지 끌어오는 넓은 단어(데이터 접근·보험·수리권·진단 등)
-BROAD = re.compile(r'data' + S + 'access|right' + S + 'to' + S + 'repair|insur|보험|손해율|保険|Versicherung|diagnos|진단|電池診断|recycl|재활용|回收|リサイクル|\blease\b|\bleasing\b|\bOBD\b', re.I)
+BROAD = re.compile(r'data' + S + 'access|right' + S + 'to' + S + r'repair|insur|보험|손해율|保険|Versicherung|diagnos|진단|電池診断|recycl|재활용|回收|リサイクル|\blease\b|\bleasing\b|\bOBD\b', re.I)
 AUTO = re.compile(r'\b(car|cars|vehicle|vehicles|auto|automotive|automaker|EV|EVs|motor|fleet|dealer)\b|electric|자동차|차량|전기차|완성차|중고차|车|車|Fahrzeug|Kfz|Auto|E-Auto', re.I)
 INS = re.compile(r'insurance|보험|특약|车险|保険|Versicherung', re.I)
 BAT = re.compile(r'batter|배터리|电池|バッテリー|電池|Batterie|Akku', re.I)
-EXPL = re.compile(r'(확인|구매|점검|고르는|선택|읽는) 방법|점검 순서|하는 법|how' + S + 'to|FAQ|一文说清|가이드(?!라인)|\bguide\b|\btips\b|알아보|總結|总结', re.I)
+EXPL = re.compile(r'(확인|구매|점검|고르는|선택|읽는) 방법|점검 순서|하는 법|how' + S + r'to|FAQ|一文说清|가이드(?!라인)|\bguide\b|\btips\b|알아보|總結|总结', re.I)
 LAUNCH = re.compile(r'시승|test drive|first drive|首发|新车上市|新车|발표회|출시 기념', re.I)
 # ESS·정치형 축전지(차량 사용후 배터리의 ESS 재사용 포함)는 판정에서 관련도 3(참고 이하)이므로 정렬도 낮춤
 ESS = re.compile(r'\bB?ESS\b|蓄電池|储能|에너지\s?저장|Energiespeicher|energy' + S + 'storage|stationary' + S + 'storage|grid' + S + 'scale', re.I)
@@ -656,6 +659,16 @@ def needed_tops(items):
     return min(3, sum(min(2, n) for n in per.values()))
 
 
+def title_gap(a, b):
+    """두 제목이 같은 기사로 보기 어려우면 True(문자 유사도 0.4 미만이고 두 글자 이상 공통 낱말·수치가 없음)."""
+    import difflib
+    n = lambda s: re.sub(r'\s+', ' ', re.sub(r'[^\w%.\s]', ' ', unicodedata.normalize('NFKC', s).lower())).strip()
+    x, y = n(a), n(b)
+    if not x or not y or difflib.SequenceMatcher(None, x, y).ratio() >= 0.4: return False
+    tok = lambda s: {w for w in s.split() if len(w) >= 2}
+    return not (tok(x) & tok(y))
+
+
 def check(path, quiet=False):
     st = now_state()
     start, cutoff = kst(st['start']), kst(st['cutoff'])
@@ -675,9 +688,18 @@ def check(path, quiet=False):
         meta = json.load(open(f'{W}/cand_meta.json'))
     except (FileNotFoundError, ValueError):
         meta = {}
+    ctitle = {}  # 수집 제목(본문 제목 대조용)
+    if os.path.exists(f'{W}/items.jsonl'):
+        for ln in open(f'{W}/items.jsonl', encoding='utf-8'):
+            if ln.strip():
+                o = json.loads(ln)
+                if o.get('title') and o.get('url'): ctitle[uhash(o['url'])] = o['title']
     urls, tops, cores = {}, [], []
     for i, it in enumerate(items, 1):
         L = f"[{i}] {str(it.get('headline') or '')[:24]}"
+        ct = ctitle.get(uhash(str(it.get('url') or '')))
+        if it.get('body_read') and ct and it.get('orig_title') and title_gap(ct, it['orig_title']):
+            Wn.append(f'{L}: 본문 제목 「{str(it["orig_title"])[:30]}」이 수집 제목 「{ct[:30]}」과 다름 → 같은 URL에서 다른 기사를 읽었을 수 있음. 같은 기사면 그대로, 아니면 본문 미확인(body_read false, summary "본문 미확인")으로')
         tier = it.get('tier')
         need = ['tier', 'axis', 'region', 'headline', 'orig_title', 'summary', 'outlet', 'url', 'published',
                 'published_kst', 'first_public', 'body_read', 'relevance', 'event_key']
@@ -910,7 +932,8 @@ def render(path):
     nw = waiting_count(f'{W}/fb0')  # 준비 단계(프롬프트 나.3)가 받은 보드 사본 기준
     if nw: push = f'[승인 대기 {nw}] ' + push
     bu = board_url()
-    push = push[:200 - (len(bu) + 9 if bu else 0)] + (f' | 제보·평가 {bu}' if bu else '')
+    tail = f' | 놓친 기사 제보·평가 {bu}' if bu else ''
+    push = push[:200 - len(tail)] + tail
     calls = d.get('calls', {})
     total = sum(v for v in calls.values() if isinstance(v, int))
     head = f"## {'제' + nnn + '호' if items else '발행 없음'} | 시작 {st['start']} | 기준 {c:%m-%d %H:%M}~{s:%m-%d %H:%M} KST | 핵심 {len(core)}·참고 {len(refs)} | 파일 {'PDF·HTML' if len(files) == 2 else ('HTML' if files else '없음')}"
@@ -935,6 +958,11 @@ def render(path):
     print('== run_log 블록 ==\n' + block)
     print('== 메모리 state.md(전달 후 덮어씀) ==\n' + mem)
     if fails: print('== 실패 ==\n' + '\n'.join(fails))
+
+
+# 참고 항목의 검증 상태 표지(해석 없이 확인 범위만 밝힘)
+TRUST_TAG = {'source_unverified': '원출처 미확인', 'time_unverified': '공개 시각 목록 기준', 'early_public': '기준 이전 공개',
+             'no_action': '발언·의견', 'self_promo': '자체 발표', 'existing_plan': '기존 계획'}
 
 
 def board_url():
@@ -1029,8 +1057,13 @@ def build_html(d, s, c, nnn, date, fails):
             for i in rs:
                 note = fn(i['url'], i['outlet'], i['orig_title'], i['published'])
                 when = i['first_public'][5:16] + (' KST' if len(i['first_public']) > 10 else '')
+                o = i.get('origin')
+                osrc = f', 원출처 자료{fn(o["url"], o.get("outlet", ""), o.get("title", ""), o.get("date", ""))}' if o and o.get('url') and nurl(o['url']) != nurl(i['url']) else ''
+                tags = [TRUST_TAG[i['trust_fail']]] if i.get('trust_fail') in TRUST_TAG else []
+                if not i.get('body_read') and '본문 미확인' not in str(i.get('summary', '')): tags.append('본문 미확인')
+                tg = f' [{" · ".join(tags)}]' if tags else ''
                 S.append(f'  <div class="ref"><span class="t">{esc(hl(i))}</span>{esc(i["summary"])}'
-                         f'<div class="m">{esc(i["outlet"])}, {i["region"]}, {when} {note}</div></div>')
+                         f'<div class="m">{esc(i["outlet"])}, {i["region"]}, {when} {note}{osrc}{esc(tg)}</div></div>')
         S.append('</section>')
         B.append('\n'.join(S))
     flush()
@@ -1406,7 +1439,10 @@ def coverage():
     bsec = t_src[t_src.index('## B.'):t_src.index('## C.')]
     generic = {w.strip().lower() for ln in bsec.splitlines()[2:] for w in ln.split(',') if w.strip()}
     generic |= {'battery', 'batteries', 'data', 'vehicle', 'vehicles', 'used', 'electric', 'health', 'car', 'cars', 'auto', 'new', 'check',
-                'value', 'values', 'prices', 'price', '전기차', '배터리', '자동차', '데이터', '차량', '중고', 'ev', 'evs', '电池', 'バッテリー', 'batterie'}
+                'value', 'values', 'prices', 'price', '전기차', '배터리', '자동차', '데이터', '차량', '중고', 'ev', 'evs', '电池', 'バッテリー', 'batterie',
+                # 대주제를 가리지 못하는 넓은 단어(공백을 가리지 않도록 제외)
+                'sales', 'returns', 'state', 'regulation', 'quarter', 'registrations', '등록', '신규', '규제', '반납', '新能源汽车', '合作', '投资',
+                '协议', '政策', '标准', '发布', '価格', '販売台数', 'implementing', 'act'}
     for g in gs:
         g['srcs'] = {items[uhash(u)]['src'] for u in g['urls'] if uhash(u) in items}
         g['regions'] = {items[uhash(u)].get('region') or region_of(items[uhash(u)]) for u in g['urls'] if uhash(u) in items}
@@ -1619,7 +1655,7 @@ def guard(old, new):
     print(f'크기 {sz}바이트(상한 {RULES_MAX})')
 
 
-RULES_MAX = 22528  # rules.md 9절 크기 상한(22KB)
+RULES_MAX = 24576  # rules.md 9절 크기 상한(24KB)
 PATCHABLE = ('rules.md', 'improve.md', 'build.py', 'sources.md', 'watchlist.md')
 
 
@@ -1873,8 +1909,11 @@ def effect(d, n):
     print(f"반영 {n}: 전 {pre} 평가 {a['평가']}건 | 후 {post} 평가 {b['평가']}건")
     for k, lab in (('유용', '유용비율'), ('FP', 'FP'), ('OVER', 'OVER'), ('UNDER', 'UNDER')):
         print(f"  {lab}: {rate(a, k)}→{rate(b, k)} ({a[k]}/{a['평가']}→{b[k]}/{b['평가']})")
+    after = [l for i, l in enumerate(ls, 1) if i > n and l in pub][5:]  # 후 구간 뒤 발행 회차(평가가 늦게 모이므로 유예)
     if len(post) < 5: print('판정: 대기(반영 뒤 발행 5회차 전)')
-    elif min(a['평가'], b['평가']) < 5: print('판정: 대기(구간 평가 5건 미만, 반영 뒤 발행 10회차가 지나도 그러면 측정 불가(평가 부족))')
+    elif min(a['평가'], b['평가']) < 5:
+        print('판정: 측정 불가(평가 부족)' if len(after) >= 10 else f'판정: 대기(구간 평가 5건 미만, 후 구간 뒤 {len(after)}/10회차)')
+    elif len(after) < 3: print(f'판정: 대기(평가 유예, 후 구간 뒤 {len(after)}/3회차)')
     else: print('판정: 기록 가능(유용비율은 오를수록, FP·OVER·UNDER는 내릴수록 효과)')
 
 
