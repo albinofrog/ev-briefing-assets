@@ -886,6 +886,30 @@ def esc(s):
     return html.escape(str(s or ''), quote=True)
 
 
+def glue(t):  # 끝줄 한 단어 방지: 어절 3개 이상이면 마지막 두 어절을 줄바꿈 없는 공백(U+00A0)으로 묶음
+    t = str(t or '')
+    w = t.rsplit(' ', 2)
+    return t if len(w) < 3 else f'{w[0]} {w[1]}\u00a0{w[2]}'
+
+
+NUM = re.compile(r'(\d[\d,.]*\s?(?:%p|%|km|개사|개|건|대|위안|년|일|월)?)')
+
+
+def bold_nums(t):  # 요약 속 숫자를 굵게(색 강조 없음)
+    return NUM.sub(lambda m: f'<b class="n">{m.group(1)}</b>', esc(t))
+
+
+def dom(u):
+    h = host(u)
+    return h[4:] if h.startswith('www.') else h
+
+
+def pubtxt(i):  # 게재 시각: KST로 통일하고 현지 표기는 괄호
+    p, k = str(i.get('published') or ''), str(i.get('published_kst') or '')
+    if 'KST' in p or not k or k == p: return p
+    return f'{k} KST (현지 {p})'
+
+
 def render(path):
     d, E = check(path)
     if E:
@@ -960,11 +984,6 @@ def render(path):
     if fails: print('== 실패 ==\n' + '\n'.join(fails))
 
 
-# 참고 항목의 검증 상태 표지(해석 없이 확인 범위만 밝힘)
-TRUST_TAG = {'source_unverified': '원출처 미확인', 'time_unverified': '공개 시각 목록 기준', 'early_public': '기준 이전 공개',
-             'no_action': '발언·의견', 'self_promo': '자체 발표', 'existing_plan': '기존 계획'}
-
-
 def board_url():
     """피드백 보드 주소(/tmp/ev/board_url.txt, 준비 단계에서 config.md의 board 값을 저장). 없으면 빈 문자열."""
     p = f'{W}/board_url.txt'
@@ -975,7 +994,7 @@ def board_url():
 def build_html(d, s, c, nnn, date, fails):
     tpl = open(f'{W}/template.html').read()
     head = tpl[tpl.index('<head>'):tpl.index('</head>') + 7]
-    script = tpl[tpl.index('<script>'):tpl.index('</script>') + 9]
+    script = tpl[tpl.rindex('<script>'):tpl.rindex('</script>') + 9]  # 주석 안의 '<script>' 글자를 피해 실제 태그를 집음
     head = re.sub(r'<!--.*?-->', '', head, flags=re.S)
     head = head.replace('{{NNN}}', nnn).replace('{{YYYY-MM-DD}}', date)
     ff = [f'{FONTS}/archivonarrow.woff2', f'{FONTS}/lgsmart.woff2']
@@ -991,11 +1010,26 @@ def build_html(d, s, c, nnn, date, fails):
     items = d['items']
     notes, srcs = {}, []
 
-    def fn(url, outlet, title, when):
+    def fn(url, outlet, title, when, back, origin=False):  # 출처 목록 번호. 목록 줄은 제목 링크·도메인·본문 복귀 링크
         if url not in notes:
             notes[url] = len(notes) + 1
-            srcs.append(f'<li>{esc(outlet)}, 「{esc(title)}」, {esc(when)}. <a href="{esc(url)}">{esc(url)}</a></li>')
-        return f'<sup><a href="{esc(url)}">[{notes[url]}]</a></sup>'
+            k = notes[url]
+            t = f'<a class="st" href="{esc(url)}">「{esc(title)}」</a> ' if title else f'<a class="st" href="{esc(url)}">{esc(outlet)} 기사</a> '
+            srcs.append(f'<li id="s{k}">' + ('<span class="olab">원출처</span>' if origin else '') + t +
+                        f'<span class="dom">{esc(dom(url))}</span>, {esc(outlet)}, <span class="nw">{esc(when)}</span>'
+                        f' <a class="back" href="#{back}">본문 ↑</a></li>')
+        return f'<a class="fnr" href="#s{notes[url]}">[{notes[url]}]</a>'
+
+    def srcline(i):  # 매체명 링크 + 도메인 + 게재 시각, 원출처가 다른 URL이면 다음 줄
+        note = fn(i['url'], i['outlet'], i['orig_title'], pubtxt(i), i['_id'])
+        L = [f'<div class="srcl"><a class="out" href="{esc(i["url"])}">{esc(i["outlet"])}</a> <span class="dom">{esc(dom(i["url"]))}</span>'
+             f' · {esc(i["region"])} · <span class="lb">게재</span> <span class="nw">{esc(pubtxt(i))}</span>{note}</div>']
+        o = i.get('origin')
+        if o and o.get('url') and nurl(o['url']) != nurl(i['url']):
+            on = fn(o['url'], o.get('outlet', ''), o.get('title', ''), o.get('date', ''), i['_id'], origin=True)
+            L.append(f'<div class="srcl"><span class="olab">원출처</span><a class="out" href="{esc(o["url"])}">{esc(o.get("outlet", ""))}</a> '
+                     f'<span class="dom">{esc(dom(o["url"]))}</span>{on}</div>')
+        return ''.join(L)
 
     B = []
     B.append('<header class="mast">\n  <div>\n' + (f'    <img class="logo" src="{uri}" alt="B.once">\n' if uri else '') +
@@ -1003,15 +1037,15 @@ def build_html(d, s, c, nnn, date, fails):
              f'  <dl><dt>이슈</dt><dd>제{nnn}호</dd><dt>발행일</dt><dd>{date} ({WEEK[s.weekday()]})</dd><dt>작성</dt><dd>{s:%H:%M} KST</dd>'
              f'<dt>조사 창</dt><dd>{c:%m-%d %H:%M} ~ {s:%m-%d %H:%M} KST</dd>'
              + (f'<dt>제보·평가</dt><dd><a href="{esc(board_url())}">피드백 보드(놓친 기사 URL 제보)</a></dd>' if board_url() else '') + '</dl>\n</header>')
+    for n, i in enumerate(items, 1): i['_id'] = f'i{n}'
     core = [i for i in items if i['tier'] == 'core']
     tops = sorted([i for i in core if i.get('top')], key=lambda x: x['top'])
-    for i in tops: i['_id'] = f"k{i['top']}"
     K = ['<div class="box">\n  <h2>오늘의 핵심</h2>']
     for i in tops:
-        fpk = i['first_public'][5:16]
-        K.append(f'  <div class="key"><span class="n">{i["top"]}</span><span class="h"><a href="#{i["_id"]}">{esc(hl(i))}</a></span>'
-                 f'<span class="s"><span class="axn">{i["axis"]}</span>{AX_SHORT[i["axis"]]} · {i["region"]} · {fpk}</span>'
-                 f'<span class="g">{esc(i["key_line"])}</span></div>')
+        K.append(f'  <div class="key"><span class="n">{i["top"]}</span><span class="h"><a href="#{i["_id"]}">{esc(glue(hl(i)))}</a></span>'
+                 f'<span class="s"><span class="axn">{i["axis"]}</span>{AX_SHORT[i["axis"]]} · {i["region"]}</span>'
+                 f'<span class="kv"><span class="srcl"><a class="out" href="{esc(i["url"])}">{esc(i["outlet"])}</a> <span class="dom">{esc(dom(i["url"]))}</span>'
+                 f' · <span class="lb">게재</span> <span class="nw">{esc(pubtxt(i))}</span></span></span></div>')
     if not tops: K.append('  <p class="none">핵심 기준을 충족한 기사 없음</p>')
     K.append('  <table class="counts">\n    <thead><tr><th>축별 건수</th>' +
              ''.join(f'<th><span class="axn">{a}</span>{AX_SHORT[a]}</th>' for a in AX_SHORT) + '<th class="sum">합계</th></tr></thead>\n    <tbody>')
@@ -1038,32 +1072,17 @@ def build_html(d, s, c, nnn, date, fails):
         S = [f'<section>\n  <h2><span class="ax">{a}</span>{AX_LONG[a]}<span class="cnt">핵심 {len(cs)} · 참고 {len(rs)}</span></h2>']
         if not cs: S.append('  <p class="none">핵심 항목 없음</p>')
         for i in cs:
-            idattr = f' id="{i["_id"]}"' if i.get('_id') else ''
-            if i['figure']:
-                fig = f'<dt class="figl">대표 수치</dt><dd class="fig">{esc(i["figure"])}</dd>' + (
-                    f'<dd class="q">{esc(i["figure_note"])}</dd>' if i['figure_note'] else '')
-            else:
-                fig = '<dt class="figl">대표 수치</dt><dd class="fig nil">수치 없음</dd>'
-            note = fn(i['url'], i['outlet'], i['orig_title'], i['published'])
-            lis = ''.join(f'<li>{esc(x)}{note if j == len(i["summary"]) - 1 else ""}</li>' for j, x in enumerate(i['summary']))
-            pub = i['published'] if 'KST' in i['published'] else f"{i['published']} ({i['published_kst']} KST)"
-            o = i.get('origin')
-            osrc = f', 원출처 자료{fn(o["url"], o.get("outlet", ""), o.get("title", ""), o.get("date", ""))}' if o and o.get('url') else ''
-            S.append(f'  <article class="item"{idattr}>\n    <dl class="meta"><dt>주체</dt><dd>{esc(i["subject"])}</dd>{fig}</dl>\n'
-                     f'    <h3>{esc(hl(i))}</h3>\n    <p class="orig">{esc(i["orig_title"])}</p>\n    <ul class="sum">{lis}</ul>\n'
-                     f'    <div class="src">{esc(i["outlet"])}({i["region"]}), 게재 {esc(pub)}{osrc}</div>\n  </article>')
+            lis = ''.join(f'<li>{bold_nums(glue(x))}</li>' for x in i['summary'])
+            S.append(f'  <article class="item" id="{i["_id"]}">\n'
+                     f'    <h3>{esc(glue(hl(i)))}</h3>\n    <p class="orig">{esc(glue(i["orig_title"]))}</p>\n    <ul class="sum">{lis}</ul>\n'
+                     f'    <div class="src">{srcline(i)}</div>\n  </article>')
         if rs:
             S.append(f'  <h4 class="tier">참고 {len(rs)}건</h4>')
             for i in rs:
-                note = fn(i['url'], i['outlet'], i['orig_title'], i['published'])
-                when = i['first_public'][5:16] + (' KST' if len(i['first_public']) > 10 else '')
-                o = i.get('origin')
-                osrc = f', 원출처 자료{fn(o["url"], o.get("outlet", ""), o.get("title", ""), o.get("date", ""))}' if o and o.get('url') and nurl(o['url']) != nurl(i['url']) else ''
-                tags = [TRUST_TAG[i['trust_fail']]] if i.get('trust_fail') in TRUST_TAG else []
-                if not i.get('body_read') and '본문 미확인' not in str(i.get('summary', '')): tags.append('본문 미확인')
-                tg = f' [{" · ".join(tags)}]' if tags else ''
-                S.append(f'  <div class="ref"><span class="t">{esc(hl(i))}</span>{esc(i["summary"])}'
-                         f'<div class="m">{esc(i["outlet"])}, {i["region"]}, {when} {note}{osrc}{esc(tg)}</div></div>')
+                ot = f'<span class="ot"><span class="lb">원제</span> {esc(glue(i["orig_title"]))}</span>' if i.get('orig_title') else ''
+                sm = str(i.get('summary') or '')
+                rs_ = f'<span class="rs">{esc(glue(sm))}</span>' if i.get('body_read') and sm and sm != '본문 미확인' else ''
+                S.append(f'  <div class="ref" id="{i["_id"]}"><span class="t">{esc(glue(hl(i)))}</span>{ot}{rs_}{srcline(i)}</div>')
         S.append('</section>')
         B.append('\n'.join(S))
     flush()
