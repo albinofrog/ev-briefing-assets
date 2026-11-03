@@ -76,10 +76,6 @@ SCHEMA = r'''
       "headline": "현대차그룹, 중고 EV 배터리 안전지수 개발 착수",   // 한국어, 행위 명사로 끝남
       "followup": false,                      // 장부에 있는 사건의 새 단계면 true
       "orig_title": "원문 제목 그대로",
-      "subject": "현대자동차그룹",               // core만
-      "figure": "1초 단위",                     // core만. 대표 수치 14자 이내, 없으면 null
-      "figure_note": "배터리 상태 산출 주기, 개발 단계",  // 대상·기준 기간·원문 단서, 없으면 null
-      "key_line": "…",                         // top 항목만. 대표 수치와 단서를 담은 한 줄
       "summary": ["사실 1", "사실 2", "사실 3"],  // core: 3~4문장 목록 / ref: 문자열 한 줄 또는 "본문 미확인"
       "outlet": "한국경제", "url": "https://…",
       "published": "09-28 17:14 KST",          // 매체 표기 게재 시각(현지 시간대 포함)
@@ -703,13 +699,10 @@ def check(path, quiet=False):
         tier = it.get('tier')
         need = ['tier', 'axis', 'region', 'headline', 'orig_title', 'summary', 'outlet', 'url', 'published',
                 'published_kst', 'first_public', 'body_read', 'relevance', 'event_key']
-        if tier == 'core':
-            need += ['subject', 'figure', 'figure_note']
         miss = [k for k in need if k not in it]
         strs = ['region', 'headline', 'orig_title', 'outlet', 'url', 'published', 'published_kst', 'first_public',
-                'event_key'] + (['subject'] if tier == 'core' else [])
+                'event_key']
         bad = [k for k in strs if k in it and not (isinstance(it[k], str) and it[k].strip())]
-        bad += [k for k in ('figure', 'figure_note', 'key_line') if it.get(k) is not None and not isinstance(it[k], str)]
         summ = it.get('summary')
         if isinstance(summ, list) and not all(isinstance(x, str) and x.strip() for x in summ): bad.append('summary')
         o = it.get('origin')
@@ -792,7 +785,6 @@ def check(path, quiet=False):
                 E.append(f'{L}: 핵심 summary는 문장 목록')
             elif not 3 <= len(summ) <= 4:
                 Wn.append(f'{L}: 요약 {len(summ)}문장(권장 3~4)')
-            if it['figure'] and len(it['figure']) > 14: Wn.append(f'{L}: figure 14자 초과')
         else:
             if not isinstance(summ, str): E.append(f'{L}: 참고 summary는 문자열 한 줄')
             if not it['body_read'] and summ != '본문 미확인': E.append(f'{L}: 본문 미확인이면 summary는 "본문 미확인"')
@@ -803,12 +795,10 @@ def check(path, quiet=False):
         if len(it['headline']) > 60: Wn.append(f'{L}: 헤드라인 {len(it["headline"])}자(60자 이내 권장)')
         if it.get('top'):
             if tier != 'core': E.append(f'{L}: top은 핵심만')
-            if not it.get('key_line'): E.append(f'{L}: top 항목은 key_line 필요')
             tops.append((it['top'], it['axis']))
         if tier == 'core': cores.append((it.get('top'), it['axis'], it['relevance'], L))
         texts = [('headline', it['headline'])]
         texts += [(f'summary{j}', x) for j, x in enumerate(summ if isinstance(summ, list) else [summ], 1)]
-        texts += [(k, it.get(k)) for k in ('figure', 'figure_note', 'key_line') if it.get(k)]
         for k, t in texts:
             E += [f'{L} {m}' for m in style_errs(k, t)]
             if re.search(BANNED, t): Wn.append(f'{L} {k}: 금지어 의심 "{re.search(BANNED, t).group()}" → 발언 주체 인용·고유명사가 아니면 고침')
