@@ -30,7 +30,8 @@
   python3 build.py effect DIR N [지표...]  반영 N(metrics.md 줄 번호) 전후 발행 회차를 지표별로 개선·악화·효과 없음·판정불가·대기로 판정
                                    (기본 유용비율·FP·OVER·UNDER, DIR: 보드 items·feedback. metrics.md 지표만 볼 때 DIR은 -. 기준은 EFF)
   python3 build.py waiting DIR     보드 사본의 승인 대기·채팅 반영 대기·수집 통합 대기 건수와 기한(SLA_DAYS) 넘김, 매일 알림 여부
-  python3 build.py lessons pull DIR|push|import FILE  교훈 원본(보드 lessons) ↔ /tmp/ev/lessons.md, 바뀐 줄만 lessons_board.json, 메모리 백업 색인 lessons_index.md
+  python3 build.py lessons pull DIR|push|commit|import FILE  교훈 원본(보드 lessons) ↔ /tmp/ev/lessons.md, 바뀐 줄만 lessons_board.json(형식 오류면 멈춤), 전문 백업 lessons_backup.json, 색인 lessons_index.md
+  python3 build.py nextid DIR      보드 proposals의 다음 p번호(숫자 비교)
   python3 build.py probe           이번 회차 놓침 탐지 검색어 4개(rules.md 9절에서 metrics.md 회차 수로 순환, 검색어 언어로 연월을 붙임)
   python3 build.py board FILE [nodeliver]   briefing.json → 피드백 보드 db 쓰기 목록(/tmp/ev/board.json). 전달 실패면 nodeliver(항목 제외)
   python3 build.py guard OLD NEW   rules.md 고정 줄(사업 맥락·금지 항목·예산·금지 출처)이 바뀌었으면 종료 1
@@ -1873,6 +1874,12 @@ def waiting(d, now=None):
 SLA_DAYS = 3  # 채팅 반영·수집 통합 기한(승인·적용 뒤 일수)
 
 
+def nextid(d):
+    """보드 proposals의 p번호 최댓값(숫자 비교)+1. c번호(채팅 변경)는 세지 않음."""
+    ns = [int(m.group(1)) for p in doc_rows(d, 'proposals') for m in [re.fullmatch(r'p(\d+)', p['_id'])] if m]
+    print(f'p{max(ns + [0]) + 1}')
+
+
 def decide(d, layer=None):
     """보드 proposals·decisions(DIR/<컬렉션>/<id>.json) → 처리할 결정(decisions.txt)과 승인분 수정(patches_new.jsonl).
     layer를 주면 그 계층 개선안만(준비 단계의 auto 당일 적용)."""
@@ -1894,6 +1901,13 @@ def decide(d, layer=None):
         for r in new: fh.write(json.dumps(r, ensure_ascii=False) + '\n')
     print(f'처리할 결정 {len(dec)}건 → {W}/decisions.txt, 승인분 수정 {len(new)}줄 → {W}/patches_new.jsonl')
     for l in dec: print('  결정: ' + l)
+    if layer is None:  # 교훈은 제안(pN)인데 보드는 이미 처리된 개선안(지난 회차 교훈 쓰기 실패 등)
+        pend = {x['_id'] for x in doc_rows(d, 'decisions')}
+        for lid, l in lesson_rows(f'{W}/lessons.md'):
+            for pid in re.findall(r'제안\((p\d+)\)', l.split('|')[1]):
+                s = (props.get(pid) or {}).get('status')
+                if s and s not in ('pending', 'needs_chat') and pid not in pend:
+                    print(f'  교훈 불일치: {lid} 제안({pid})인데 보드 status {s} (improve.md 3번대로 교훈 상태를 맞춤)')
 
 
 def prompt_guard(old, new, ptxt):
@@ -1925,7 +1939,7 @@ def collect_scope(e):
     if f != 'sources.md': return False
     p = f'{W}/sources.md'
     t = open(p, encoding='utf-8').read() if os.path.exists(p) else ''
-    at = next((t.find(x) for x in (e.get('old') or '', e.get('new') or '') if x and x in t), -1)
+    at = next((t.find(x) for x in (e.get('old') or '', e.get('new') or '') if x and t.count(x) == 1), -1)  # 한 곳에만 있는 문구로 위치 판정
     if at < 0: return True  # 위치를 모르면 보수적으로 수집 범위로 봄
     sec = re.findall(r'^## ([A-Z])\.', t[:at], re.M)
     return bool(sec) and sec[-1] in COLLECT_SECS
@@ -1936,7 +1950,7 @@ def patch_cmd(ref, keep_only=False, board_dir=None, auto=False):
     결과 patches_keep.jsonl(메모리 patches.md에 저장할 내용)."""
     for f in ('sources.md', 'watchlist.md'):
         if not os.path.exists(f'{W}/{f}'): curl(f, f'{W}/{f}')
-    keep, out, live = [], [], set()  # live: 사본에만 들어가고 저장소에는 아직 없는 개선안
+    keep, out, live, scope = [], [], set(), set()  # scope: 수집 범위 수정. live: 사본에만 들어가고 저장소에는 아직 없는 개선안
     ptxt = prompt_text(ref)
     status = None
     if board_dir is not None:
@@ -1948,6 +1962,7 @@ def patch_cmd(ref, keep_only=False, board_dir=None, auto=False):
             out.append(f'DROP {pid} 보드 status {status.get(pid) or "없음"}(applied 아님)'); continue
         bad = [why for e in ed if e.get('file') == 'prompt' for r0, why in [prompt_guard(e.get('old') or '', e.get('new') or '', ptxt)] if r0 == 'fail']
         if bad: out.append(f'DROP {pid} {bad[0]}'); continue
+        if any(collect_scope(e) for e in ed): scope.add(pid)  # 적용 전 사본에서 old 위치로 판정
         r, why, _, _ = apply_group(ed)
         keep += ed
         if r == 'ok': live.add(pid)
@@ -1965,6 +1980,7 @@ def patch_cmd(ref, keep_only=False, board_dir=None, auto=False):
         pick = lambda f: [l for l in (open(f'{W}/{f}', encoding='utf-8').read().splitlines() if os.path.exists(f'{W}/{f}') else [])
                           if any(re.search(x, l) for x in LOCK)]
         lock0 = {f: pick(f) for f in files}
+        if any(collect_scope(e) for e in ed): scope.add(pid)
         r, why, back, touched = apply_group(ed, strict=True)
         if r != 'fail':
             if any(pick(f) != lock0[f] for f in files): why = '고정 줄 변경'
@@ -1994,13 +2010,13 @@ def patch_cmd(ref, keep_only=False, board_dir=None, auto=False):
         print('프롬프트 수정(이번 회차부터 아래 문구로 바꿔 읽음):')
         for e in pr: print(f"  [{e['id']}] 고치기 전: {e['old']}\n         고친 뒤: {e['new']}")
     # GitHub Actions(collect.py)는 저장소의 sources.md·watchlist.md로 수집하므로, 통합 전까지 새 검색어는 수집되지 않음
-    coll = sorted({e['id'] for e in keep if e['id'] in live and collect_scope(e)})
+    coll = sorted(scope & live)
     open(f'{W}/collect_scope.txt', 'w', encoding='utf-8').write(''.join(x + '\n' for x in coll))  # improve.md 2·3번: 이 개선안은 collect_pending, 교훈은 패치 n(측정은 통합 회차부터)
     terms = [l[2:].split(' | ')[0].strip() for e in keep if e['id'] in live and e.get('file') == 'watchlist.md'
              for l in (e.get('new') or '').splitlines() if l.startswith('- ') and l not in (e.get('old') or '').splitlines()]
     allterms = terms
     if len(terms) > PENDING_MAX:  # 보조 15회 잠식 방지: 회차(날짜)마다 PENDING_MAX개씩 돌려 씀(제021~028호 12/15회 소진)
-        k = dt.date.today().toordinal() % len(terms)
+        k = (dt.date.today().toordinal() * PENDING_MAX) % len(terms)  # 하루에 PENDING_MAX칸씩 밀어 겹치지 않게
         terms = (terms[k:] + terms[:k])[:PENDING_MAX]
     open(f'{W}/pending_collect.txt', 'w', encoding='utf-8').write(''.join(t + '\n' for t in terms))
     if coll:
@@ -2058,8 +2074,8 @@ def promote(path):
 EVAL_K = {'유용비율': '유용', 'FP': 'FP', 'OVER': 'OVER', 'UNDER': 'UNDER'}  # 보드 평가로 재는 지표 → 분자 칸
 RATIO_K = {'출처12비율': lambda l: mval(l, '핵심') + mval(l, '참고'), '핵심원출처': lambda l: mval(l, '핵심'),
            '관련12본문': lambda l: mval(l, '관련12건수')}  # metrics.md % 지표 → 분모(회차마다 분자=값×분모로 되살려 합산)
-HIGHER = {'유용비율', '출처12비율', '핵심원출처', '관련12본문', '참고원출처', '검토율', '핵심', '참고', '관련12건수', '중복경고'}
-EFF = {'min_eval': 20, 'min_den': 10, 'band_pp': 10.0, 'band_cnt': 1.0, 'win': 5, 'win_max': 10, 'grace': 3}  # improve.md 5번 판정 기준
+HIGHER = {'유용비율', '출처12비율', '핵심원출처', '관련12본문', '참고원출처', '검토율', '핵심', '참고', '관련12건수'}  # 화살표 없을 때 기본 방향
+EFF = {'min_eval': 20, 'min_den': 20, 'band_pp': 10.0, 'min_events': 2, 'band_cnt': 1.0, 'win': 5, 'win_max': 10, 'grace': 3}  # improve.md 5번 판정 기준
 
 
 def mval(l, k):
@@ -2068,9 +2084,12 @@ def mval(l, k):
     return None if not m or m.group(1) == '-' else float(m.group(1))
 
 
-def judge_diff(k, a, b, band):
-    """전 a·후 b(비율 %p 또는 회차 평균)를 차이 기준으로 판정."""
-    d = b - a if k in HIGHER else a - b  # 양수면 좋아짐
+def judge_diff(k, a, b, band, up=None, events=None):
+    """전 a·후 b(비율 %p 또는 회차 평균)를 차이 기준으로 판정. up: 좋아지는 방향(True=↑, effect 문구의 화살표, 없으면 HIGHER).
+    events: 비율 지표의 '후 구간 기대 건수와 실제 건수 차이'(건). EFF min_events 미만이면 차이 기준을 넘어도 효과 없음."""
+    up = (k in HIGHER) if up is None else up
+    d = b - a if up else a - b  # 양수면 좋아짐
+    if events is not None and abs(events) < EFF['min_events']: return '효과 없음(차이 기준 이내)'
     return '개선' if d >= band else '악화' if -d >= band else '효과 없음(차이 기준 이내)'
 
 
@@ -2079,6 +2098,12 @@ def effect(d, n, metrics=None):
     평가 지표(유용비율·FP·OVER·UNDER)는 보드 items·feedback(d)으로 기사를 실은 회차 기준·평가 건수 대비, % 지표는 분자·분모 합산 비율,
     그 밖은 회차 평균. 창은 5회차에서 시작해 표본이 EFF 최소치에 못 미치면 10회차까지 넓힘."""
     metrics = metrics or list(EVAL_K)
+    want = []  # (지표 이름, 좋아지는 방향 또는 None): '핵심원출처 ↑', 'FP ↓', 'FP↓', '재발 ↓(OPS:…)' 형태 허용
+    for x in metrics:
+        m = re.match(r'\s*([^\s↑↓(]+)\s*([↑↓])?', x)
+        if m: want.append((m.group(1), None if not m.group(2) else m.group(2) == '↑'))
+    if any(k in EVAL_K for k, _ in want) and d in ('-', ''):
+        sys.exit('effect: 평가 지표(유용비율·FP·OVER·UNDER)는 보드 items·feedback DIR이 필요(- 불가)')
     ls = [l for l in (open(f'{W}/metrics.md', encoding='utf-8').read().splitlines() if os.path.exists(f'{W}/metrics.md') else [])
           if re.match(r'\d{4}-\d\d-\d\d \| ', l)]
     pub = set(pub_lines())
@@ -2095,8 +2120,10 @@ def effect(d, n, metrics=None):
             c = cnt.setdefault(it.get('issue'), {'평가': 0, '유용': 0, 'FP': 0, 'OVER': 0, 'UNDER': 0})
             c['평가'] += 1; c['유용' if v == 'useful' else vmap[v]] += 1
     print(f"반영 {n}: 반영 전 발행 {len(pre_all)}회차, 반영 뒤 발행 {len(post_all)}회차 (기준: 평가 {EFF['min_eval']}건·분모 {EFF['min_den']}건 이상, "
-          f"차이 {EFF['band_pp']:g}%p·회차 평균 {EFF['band_cnt']:g} 이상, 창 {EFF['win']}~{EFF['win_max']}회차)")
-    for k in metrics:
+          f"차이 {EFF['band_pp']:g}%p이면서 {EFF['min_events']}건 이상·회차 평균 {EFF['band_cnt']:g} 이상, 창 {EFF['win']}~{EFF['win_max']}회차)")
+    for k, up in want:
+        if k not in EVAL_K and not any(mval(x, k) is not None for x in ls):
+            print(f"  {k}: 판정: 측정 불가(metrics.md·보드에 없는 지표 이름)"); continue
         if len(post_all) < EFF['win']:
             print(f"  {k}: 판정: 대기(반영 뒤 발행 {len(post_all)}/{EFF['win']}회차)"); continue
         res = None
@@ -2113,12 +2140,12 @@ def effect(d, n, metrics=None):
                 va, vb = [mval(x, k) for x in pre if mval(x, k) is not None], [mval(x, k) for x in post if mval(x, k) is not None]
                 ok = len(va) >= EFF['win'] and len(vb) >= EFF['win']
                 res = (w, f"{sum(va) / len(va):.1f}→{sum(vb) / len(vb):.1f}(회차 평균, {len(va)}→{len(vb)}회차)" if va and vb else '값 없음',
-                       judge_diff(k, sum(va) / len(va), sum(vb) / len(vb), EFF['band_cnt']) if ok else None)
+                       judge_diff(k, sum(va) / len(va), sum(vb) / len(vb), EFF['band_cnt'], up) if ok else None)
                 if ok or len(post) < w: break
                 continue
             txt = f"{100 * an / ad if ad else 0:.1f}%→{100 * bn / bd if bd else 0:.1f}% ({an:.3g}/{ad:g}→{bn:.3g}/{bd:g})"
             ok = min(ad, bd) >= need
-            res = (w, txt, judge_diff(k, 100 * an / ad, 100 * bn / bd, EFF['band_pp']) if ok else None)
+            res = (w, txt, judge_diff(k, 100 * an / ad, 100 * bn / bd, EFF['band_pp'], up, bn - an / ad * bd) if ok else None)
             if ok or len(post) < w: break  # 후 구간이 아직 다 안 찼으면 더 넓히지 않음
         w, txt, v = res
         post = post_all[:w]
@@ -2153,12 +2180,19 @@ def lessons_cmd(sub, arg=None):
         print(f'보드 교훈 {len(rows)}건 → {cur_p}')
         if not rows: sys.exit(2)
         return
+    if sub == 'commit':  # 보드 쓰기 성공 뒤: 지금 lessons.md를 새 base로(같은 회차 두 번째 push는 바뀐 줄만)
+        json.dump(dict(lesson_rows(cur_p)), open(base_p, 'w', encoding='utf-8'), ensure_ascii=False)
+        print(f'lessons base 갱신 {len(lesson_rows(cur_p))}줄'); return
     if sub == 'import':
         base, rows = {}, lesson_rows(arg)
     else:
         base = json.load(open(base_p, encoding='utf-8')) if os.path.exists(base_p) else None
         if base is None: sys.exit('lessons_base.json 없음: pull을 먼저 하거나 처음이면 import FILE')
         rows = lesson_rows(cur_p)
+    if sub != 'import':
+        badl = [l for l in open(cur_p, encoding='utf-8').read().splitlines() if l.strip() and not
+                (re.match(r'L\d+ \|', l) and len(l.split('|')) >= 9)]
+        if badl: sys.exit(f'lessons.md 형식 오류 {len(badl)}줄(9칸 미만이거나 L번호로 시작하지 않음), push 안 함: ' + badl[0][:80])
     cur = dict(rows)
     dup = len(rows) - len(cur)
     if dup: sys.exit(f'L번호 중복 {dup}건: lessons.md를 고친 뒤 다시 실행')
@@ -2167,15 +2201,20 @@ def lessons_cmd(sub, arg=None):
         if base.get(lid) == l: continue
         c = [x.strip() for x in l.split('|')]
         ops.append({'op': 'set', 'collection': 'lessons', 'doc_id': lid, 'data': {
-            'line': l, 'state': c[1], 'goal': c[2], 'layer': c[3], 'code': c[4], 'n': c[5], 'start': c[-1]}})
-    gone = [lid for lid in base if lid not in cur]
-    ops += [{'op': 'set', 'collection': 'lessons', 'doc_id': lid, 'data': {'line': '', 'removed': True}} for lid in gone]
+            'line': l, 'state': c[1], 'goal': c[2], 'layer': c[3], 'code': c[4], 'n': c[5], 'start': c[-1], 'removed': False}})
+    gone = [lid for lid in base if lid not in cur]  # 6번 요약으로 합친 줄 등: 원문은 남기고 removed 표시
+    ops += [{'op': 'set', 'collection': 'lessons', 'doc_id': lid, 'data': {'line': base[lid], 'removed': True}} for lid in gone]
     json.dump(ops, open(f'{W}/lessons_board.json', 'w', encoding='utf-8'), ensure_ascii=False)
+    full = ''.join(l + '\n' for _, l in rows)
+    json.dump({'text': full, 'n': len(rows), 'at': dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')},
+              open(f'{W}/lessons_backup.json', 'w', encoding='utf-8'), ensure_ascii=False)
     idx = ['# 교훈 색인(원본은 보드 lessons, build.py lessons pull로 받음). L번호 | 상태 | 목표 | 계층 | 원인 코드 | 관찰 n회 | 시작 회차']
     idx += [' | '.join([x.strip() for x in l.split('|')][:6] + [[x.strip() for x in l.split('|')][-1]]) for _, l in rows]
     open(f'{W}/lessons_index.md', 'w', encoding='utf-8').write('\n'.join(idx) + '\n')
-    print(f'{W}/lessons_board.json ({len(ops)}건: 바뀜·새 {len(ops) - len(gone)}, 없어짐 {len(gone)}) → ArtifactData batch(50건씩)\n'
-          f'{W}/lessons_index.md ({len(rows)}줄) → 메모리 lessons.md 덮어쓰기(백업 색인)')
+    print(f'{W}/lessons_board.json ({len(ops)}건: 바뀜·새 {len(ops) - len(gone)}, 없어짐 {len(gone)}' + (f' {",".join(gone)}' if gone else '')
+          + ') → ArtifactData batch(50건씩), 성공하면 lessons commit\n'
+          f'{W}/lessons_backup.json (전문 {len(rows)}줄) → 보드 lessons_backup/<YYYYMMDD> set(file_path)\n'
+          f'{W}/lessons_index.md ({len(rows)}줄) → 백업이 성공하면 메모리 lessons.md 덮어쓰기(색인)')
 
 
 def reapply_assets():
@@ -2216,6 +2255,7 @@ if __name__ == '__main__':
     elif a[0] == 'board': board(a[1], 'nodeliver' not in a[2:])
     elif a[0] == 'guard': guard(a[1], a[2])
     elif a[0] == 'waiting': waiting(a[1])
+    elif a[0] == 'nextid': nextid(a[1])
     elif a[0] == 'decide': decide(a[1], a[2] if len(a) > 2 else None)
     elif a[0] == 'patch':
         k = '--keep' in a; au = '--auto' in a; r = [x for x in a[1:] if x not in ('--keep', '--auto')]

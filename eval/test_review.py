@@ -398,10 +398,10 @@ check('L effect 반영 전 평가 20건 미만이면 창을 넓히며 대기', '
 W = setup(); os.environ['EV_W'] = W
 row = lambda k, core, co, s12, j2: (f'2026-10-{k:02d} | {k} | 핵심 {core} 참고 3 | 웹 1 | 평가 0 유용 0 | 검색 충분성 수집실패 1 | '
                                     f'출처 신뢰성 출처12비율 {s12}% 자체판정2 {j2} 핵심원출처 {co} | 문서 관련성 FP 0 | 미달 - | 기여 -\n')
-ml = ''.join(row(k, 2, '50%', 80, 2 if k % 2 else 3) for k in range(1, 6)) + ''.join(row(k, 2, '0%', 78, 3) for k in range(6, 11))
+ml = ''.join(row(k, 4, '50%', 80, 2 if k % 2 else 3) for k in range(1, 6)) + ''.join(row(k, 4, '0%', 78, 3) for k in range(6, 11))
 open(f'{W}/metrics.md', 'w').write(ml)
 c, o = run(W, 'effect', '-', '5', '핵심원출처', '출처12비율', '자체판정2')
-check('M % 지표는 분자·분모 합산: 핵심원출처 50%→0% 악화', '핵심원출처: 전 [1, 2, 3, 4, 5] → 후 [6, 7, 8, 9, 10] | 50.0%→0.0% (5/10→0/10) | 판정: 악화' in o, o)
+check('M % 지표는 분자·분모 합산(분모 20 이상): 핵심원출처 50%→0% 악화', '핵심원출처: 전 [1, 2, 3, 4, 5] → 후 [6, 7, 8, 9, 10] | 50.0%→0.0% (10/20→0/20) | 판정: 악화' in o, o)
 check('M 차이 10%p 미만은 효과 없음(출처12비율 80→78)', '출처12비율: ' in o and '80.0%→78.0%' in o and '효과 없음(차이 기준 이내)' in o.split('출처12비율:')[1].split('\n')[0], o)
 check('M 회차 평균 지표는 차이 1 미만이면 효과 없음(자체판정2 2.4→3.0)', '2.4→3.0(회차 평균' in o and '효과 없음' in o.split('자체판정2:')[1], o)
 ml = ''.join(row(k, 1, '0%', 80, 2) for k in range(1, 8)) + ''.join(row(k, 1, '100%', 80, 2) for k in range(8, 14))
@@ -448,8 +448,17 @@ L3 = 'L3 | 관찰 | 충분성 | auto | C1 | 1 | 제003호 근거 | 놓침 | 3'
 open(f'{W}/lessons.md', 'w').write(L1b + '\n' + L3 + '\n')
 c, o = run(W, 'lessons', 'push')
 ops = {x['doc_id']: x['data'] for x in json.load(open(f'{W}/lessons_board.json'))}
-check('M lessons push: 바뀐 줄·새 줄만 set, 사라진 줄은 removed', set(ops) == {'L1', 'L2', 'L3'} and ops['L1']['line'] == L1b
-      and ops['L2'] == {'line': '', 'removed': True} and ops['L3']['n'] == '1', o)
+check('M lessons push: 바뀐 줄·새 줄만 set, 사라진 줄은 원문을 남긴 채 removed', set(ops) == {'L1', 'L2', 'L3'} and ops['L1']['line'] == L1b
+      and ops['L2'] == {'line': L2, 'removed': True} and ops['L3']['n'] == '1' and ops['L3']['removed'] is False, o)
+bk = json.load(open(f'{W}/lessons_backup.json'))
+check('M lessons push: 전문 백업(lessons_backup.json)', bk['n'] == 2 and bk['text'] == L1b + '\n' + L3 + '\n', bk)
+c, o = run(W, 'lessons', 'commit')
+c, o = run(W, 'lessons', 'push')
+check('M lessons commit 뒤 다시 push하면 0건', json.load(open(f'{W}/lessons_board.json')) == [], o)
+open(f'{W}/lessons.md', 'w').write(L1b + '\n' + L3.replace(' | 3', '') + '\n요약: 합친 줄\n')
+c, o = run(W, 'lessons', 'push')
+check('M lessons push: 9칸 미만·L번호 없는 줄이 있으면 종료 1, 보드 쓰기 파일을 만들지 않음', c == 1 and '형식 오류 2줄' in o and json.load(open(f'{W}/lessons_board.json')) == [], o)
+open(f'{W}/lessons.md', 'w').write(L1b + '\n' + L3 + '\n')
 idx = open(f'{W}/lessons_index.md').read().splitlines()
 check('M lessons 색인: 근거 칸 없이 한 줄씩(메모리 백업)', len(idx) == 3 and idx[1] == 'L1 | 관찰 | 운영 | code | OPS:가 | 3 | 1' and '근거' not in idx[1], idx)
 c, o = run(W, 'lessons', 'pull', f'{W}/없음')
@@ -476,5 +485,36 @@ board(W, 'fb0', {'p40': 'applied'})
 c, o = run(W, 'patch', '--keep', 'main', f'{W}/fb0')
 pc = open(f'{W}/pending_collect.txt').read().split('\n')[:-1]
 check('N 미수집 검색어는 회차마다 3개만 돌려 씀', len(pc) == 3 and all(x.startswith('새검색어') for x in pc) and '5개 중 3개' in o, o + str(pc))
+
+# O. 2026-11-05 재검증 수정(effect 방향·최소 건수·이름 검사, 순환, 삭제 수정 분류, nextid, 교훈 불일치)
+W = setup(); os.environ['EV_W'] = W
+row = lambda k, core, co: f'2026-10-{k:02d} | {k} | 핵심 {core} 참고 3 | 웹 1 | 평가 0 유용 0 | 출처 신뢰성 핵심원출처 {co} 중복경고 {k % 3} | 기여 -\n'
+open(f'{W}/metrics.md', 'w').write(''.join(row(k, 4, '50%') for k in range(1, 6)) + ''.join(row(k, 4, '40%') for k in range(6, 11)))
+c, o = run(W, 'effect', '-', '5', '핵심원출처 ↑')
+check('O 차이 10%p이면서 2건 이상이면 악화(50%→40%, 10/20→8/20)', '판정: 악화' in o, o)
+c, o = run(W, 'effect', '-', '5', '핵심원출처 ↓')
+check('O effect 화살표가 방향을 정함(↓면 같은 변화가 개선)', '판정: 개선' in o, o)
+c, o = run(W, 'effect', '-', '5', '재발 ↓(OPS:가)', '없는지표')
+check('O metrics.md에 없는 지표 이름은 측정 불가로 표시', o.count('측정 불가(metrics.md·보드에 없는 지표 이름)') == 2, o)
+c, o = run(W, 'effect', '-', '5', 'FP ↓')
+check('O 평가 지표에 DIR - 는 종료 1', c == 1 and '평가 지표' in o, o)
+spec = importlib.util.spec_from_file_location('b_o', B); bo = importlib.util.module_from_spec(spec); spec.loader.exec_module(bo)
+src = open(f'{W}/sources.md', encoding='utf-8').read()
+h_line = next(l for l in src[src.index('## H.'):].splitlines()[1:] if l.strip())
+jl(W, 'patches.jsonl', [{'id': 'p50', 'file': 'sources.md', 'old': h_line + '\n', 'new': ''}])
+board(W, 'fb0', {'p50': 'applied'})
+c, o = run(W, 'patch', '--keep', 'main', f'{W}/fb0')
+check('O 삭제 수정은 적용 전 위치로 분류(H절 삭제는 수집 범위 아님)', open(f'{W}/collect_scope.txt').read() == '' and 'KEEP p50 ok' in o, o)
+import datetime as _d2
+terms = [f't{i}' for i in range(12)]
+day = lambda k: (terms[(k * bo.PENDING_MAX) % 12:] + terms[:(k * bo.PENDING_MAX) % 12])[:3]
+o1 = _d2.date.today().toordinal()
+check('O 미수집 검색어 순환: 이웃한 날끼리 겹치지 않음', not set(day(o1)) & set(day(o1 + 1)))
+board(W, 'fbn', {'p9': 'applied', 'p23': 'pending', 'c3': 'applied'})
+c, o = run(W, 'nextid', f'{W}/fbn')
+check('O nextid는 숫자 비교(p23 다음은 p24, c번호 무시)', o.strip() == 'p24', o)
+open(f'{W}/lessons.md', 'w').write('L4 | 제안(p9) | 신뢰성 | judge | G | 1 | 근거 | 지표 | 1\nL5 | 제안(p23) | 신뢰성 | judge | G | 1 | 근거 | 지표 | 1\n')
+c, o = run(W, 'decide', f'{W}/fbn')
+check('O decide: 교훈은 제안인데 보드가 처리된 개선안을 교훈 불일치로 표시', '교훈 불일치: L4 제안(p9)인데 보드 status applied' in o and 'L5' not in o, o)
 
 print(f'\n{fails} failed'); sys.exit(1 if fails else 0)
