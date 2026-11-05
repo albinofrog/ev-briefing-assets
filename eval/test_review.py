@@ -378,16 +378,81 @@ try:
     check('L 차량 문맥', bool(cl.CTX.search('EV向け蓄電池の補助金')) and not cl.CTX.search('GX地域共創補助金を採択しました'))
 except ImportError as e:
     print(f'SKIP L collect.py({e}: feedparser·requests 없음)')
-ml = ''.join(f'2026-10-{d:02d} | {k} | 핵심 1 참고 1 | 웹 1 | 평가 0 유용 0 | 기여 -\n' for k, d in zip(range(1, 13), range(1, 13)))
+# effect(2026-11-05 개편): 평가 지표는 구간 평가 20건 이상·차이 10%p 이상일 때만 개선·악화, 평가 유예 3회차
+ml = ''.join(f'2026-10-{k:02d} | {k} | 핵심 1 참고 1 | 웹 1 | 평가 0 유용 0 | 기여 -\n' for k in range(1, 14))
 open(f'{W}/metrics.md', 'w').write(ml)
 os.makedirs(f'{W}/fb/items'); os.makedirs(f'{W}/fb/feedback')
-for k in range(1, 13):
-    for j in range(2):
+for k in range(1, 14):
+    for j in range(4):  # 1~5호는 불필요 2/4, 6호부터 1/4
         json.dump({'id': f'i{k}{j}', 'data': {'issue': k, 'tier': 'ref'}}, open(f'{W}/fb/items/i{k}{j}.json', 'w'))
-        json.dump({'id': f'i{k}{j}', 'data': {'verdict': 'useful' if j else 'noise'}}, open(f'{W}/fb/feedback/i{k}{j}.json', 'w'))
-c, o = run(W, 'effect', f'{W}/fb', '3')
-check('L effect 기록 가능(후 구간 뒤 3회차 지남)', '기록 가능' in o and '전 [1, 2, 3]' in o and '후 [4, 5, 6, 7, 8]' in o, o)
+        json.dump({'id': f'i{k}{j}', 'data': {'verdict': 'noise' if j < (2 if k <= 5 else 1) else 'useful'}}, open(f'{W}/fb/feedback/i{k}{j}.json', 'w'))
 c, o = run(W, 'effect', f'{W}/fb', '5')
-check('L effect 평가 유예(후 구간 뒤 2회차)', '평가 유예' in o, o)
+check('L effect 평가 20건 이상·차이 25%p → FP 개선·유용비율 개선', 'FP: 전 [1, 2, 3, 4, 5] → 후 [6, 7, 8, 9, 10] | 50.0%→25.0% (10/20→5/20) | 판정: 개선' in o
+      and '유용비율: 전 [1, 2, 3, 4, 5]' in o and o.count('판정: 개선') == 2, o)
+c, o = run(W, 'effect', f'{W}/fb', '6')
+check('L effect 평가 유예(후 구간 뒤 2회차)', 'FP: ' in o and '평가 유예, 후 구간 뒤 2/3회차' in o, o)
+c, o = run(W, 'effect', f'{W}/fb', '4')
+check('L effect 반영 전 평가 20건 미만이면 창을 넓히며 대기', '판정: 대기(표본 부족' in o and '판정: 개선' not in o, o)
+
+# ── M. 2026-11-05 검증·반영 단계 개편(지표별 판정, 수집 범위 patched, 교훈 보드 원본)
+W = setup(); os.environ['EV_W'] = W
+row = lambda k, core, co, s12, j2: (f'2026-10-{k:02d} | {k} | 핵심 {core} 참고 3 | 웹 1 | 평가 0 유용 0 | 검색 충분성 수집실패 1 | '
+                                    f'출처 신뢰성 출처12비율 {s12}% 자체판정2 {j2} 핵심원출처 {co} | 문서 관련성 FP 0 | 미달 - | 기여 -\n')
+ml = ''.join(row(k, 2, '50%', 80, 2 if k % 2 else 3) for k in range(1, 6)) + ''.join(row(k, 2, '0%', 78, 3) for k in range(6, 11))
+open(f'{W}/metrics.md', 'w').write(ml)
+c, o = run(W, 'effect', '-', '5', '핵심원출처', '출처12비율', '자체판정2')
+check('M % 지표는 분자·분모 합산: 핵심원출처 50%→0% 악화', '핵심원출처: 전 [1, 2, 3, 4, 5] → 후 [6, 7, 8, 9, 10] | 50.0%→0.0% (5/10→0/10) | 판정: 악화' in o, o)
+check('M 차이 10%p 미만은 효과 없음(출처12비율 80→78)', '출처12비율: ' in o and '80.0%→78.0%' in o and '효과 없음(차이 기준 이내)' in o.split('출처12비율:')[1].split('\n')[0], o)
+check('M 회차 평균 지표는 차이 1 미만이면 효과 없음(자체판정2 2.4→3.0)', '2.4→3.0(회차 평균' in o and '효과 없음' in o.split('자체판정2:')[1], o)
+ml = ''.join(row(k, 1, '0%', 80, 2) for k in range(1, 8)) + ''.join(row(k, 1, '100%', 80, 2) for k in range(8, 14))
+open(f'{W}/metrics.md', 'w').write(ml)
+c, o = run(W, 'effect', '-', '7', '핵심원출처')
+check('M 분모 10 미만이면 넓히다가 후 구간이 덜 차면 대기(핵심 1건씩, 반영 뒤 6회차)', '판정: 대기(표본 부족' in o and '악화' not in o and '개선' not in o, o)
+ml += ''.join(row(k, 0, '-', 80, 2) for k in range(14, 18))  # 핵심 0건 회차(값 -)는 분모에 넣지 않음
+open(f'{W}/metrics.md', 'w').write(ml)
+c, o = run(W, 'effect', '-', '7', '핵심원출처')
+check('M 핵심 0건 회차는 분모 밖 → 10회차까지 넓혀도 부족하면 판정불가', '판정불가(표본 부족)' in o, o)
+c, o = run(W, 'effect', '-', '13', '핵심원출처')
+check('M 반영 뒤 5회차 전이면 대기', '판정: 대기(반영 뒤 발행 4/5회차)' in o, o)
+
+spec = importlib.util.spec_from_file_location('b_m', B); bm = importlib.util.module_from_spec(spec); spec.loader.exec_module(bm)
+src = open(f'{W}/sources.md', encoding='utf-8').read()
+h_line = next(l for l in src[src.index('## H.'):].splitlines()[1:] if l.strip())
+a_line = next(l for l in src[src.index('## A.'):].splitlines()[1:] if l.startswith('- '))
+c_line = next(l for l in src[src.index('## C.'):].splitlines()[1:] if l.strip())
+check('M 수집 범위: sources.md A절·watchlist는 수집 범위, C·H절(회차 사본이 바로 씀)은 아님',
+      bm.collect_scope({'file': 'sources.md', 'old': a_line}) and bm.collect_scope({'file': 'watchlist.md', 'old': 'x'})
+      and not bm.collect_scope({'file': 'sources.md', 'old': h_line}) and not bm.collect_scope({'file': 'sources.md', 'old': c_line})
+      and not bm.collect_scope({'file': 'rules.md', 'old': 'x'}))
+jl(W, 'patches.jsonl', [{'id': 'p30', 'file': 'sources.md', 'old': h_line, 'new': h_line + '\n- example.com'},
+                        {'id': 'p31', 'file': 'sources.md', 'old': a_line, 'new': a_line + '\n- 예시 | https://example.com/rss'}])
+board(W, 'fb0', {'p30': 'applied', 'p31': 'applied'})
+c, o = run(W, 'patch', '--keep', 'main', f'{W}/fb0')
+cs = open(f'{W}/collect_scope.txt').read().split()
+check('M 재적용하고, collect_scope.txt에는 수집 범위 수정(A절)만, H절은 아님', 'KEEP p30 ok' in o and 'KEEP p31 ok' in o and cs == ['p31'], o + str(cs))
+
+L1 = 'L1 | 관찰 | 운영 | code | OPS:가 | 2 | 제001호 근거 | 지표 | 1'
+L2 = 'L2 | 반영 | 관련성 | judge | FP | 3 | 제002호 근거 | FP; 반영 5 | 2'
+open(f'{W}/src.md', 'w').write('머리 줄\n' + L1 + '\n' + L2 + '\n')
+c, o = run(W, 'lessons', 'import', f'{W}/src.md')
+ops = json.load(open(f'{W}/lessons_board.json'))
+check('M lessons import: 전 줄을 보드 set으로, L번호가 문서 id', [x['doc_id'] for x in ops] == ['L1', 'L2'] and ops[1]['data']['line'] == L2
+      and ops[1]['data']['state'] == '반영' and ops[1]['data']['start'] == '2', o)
+os.makedirs(f'{W}/fbl/lessons')
+for x in ops: json.dump({'id': x['doc_id'], 'data': x['data'], 'version': 1}, open(f'{W}/fbl/lessons/{x["doc_id"]}.json', 'w'), ensure_ascii=False)
+json.dump({'id': 'L0', 'data': {'line': '', 'removed': True}}, open(f'{W}/fbl/lessons/L0.json', 'w'))
+c, o = run(W, 'lessons', 'pull', f'{W}/fbl')
+check('M lessons pull: removed 제외, L번호순으로 lessons.md 복원', open(f'{W}/lessons.md').read() == L1 + '\n' + L2 + '\n' and c == 0, o)
+L1b = L1.replace('| 2 | 제001호 근거', '| 3 | 제003호 근거; 제001호 근거')
+L3 = 'L3 | 관찰 | 충분성 | auto | C1 | 1 | 제003호 근거 | 놓침 | 3'
+open(f'{W}/lessons.md', 'w').write(L1b + '\n' + L3 + '\n')
+c, o = run(W, 'lessons', 'push')
+ops = {x['doc_id']: x['data'] for x in json.load(open(f'{W}/lessons_board.json'))}
+check('M lessons push: 바뀐 줄·새 줄만 set, 사라진 줄은 removed', set(ops) == {'L1', 'L2', 'L3'} and ops['L1']['line'] == L1b
+      and ops['L2'] == {'line': '', 'removed': True} and ops['L3']['n'] == '1', o)
+idx = open(f'{W}/lessons_index.md').read().splitlines()
+check('M lessons 색인: 근거 칸 없이 한 줄씩(메모리 백업)', len(idx) == 3 and idx[1] == 'L1 | 관찰 | 운영 | code | OPS:가 | 3 | 1' and '근거' not in idx[1], idx)
+c, o = run(W, 'lessons', 'pull', f'{W}/없음')
+check('M lessons pull 0건이면 종료 2(improve.md: 2·4·5·6번 건너뜀)', c == 2, o)
 
 print(f'\n{fails} failed'); sys.exit(1 if fails else 0)
