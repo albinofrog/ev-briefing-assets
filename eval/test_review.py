@@ -455,4 +455,26 @@ check('M lessons 색인: 근거 칸 없이 한 줄씩(메모리 백업)', len(id
 c, o = run(W, 'lessons', 'pull', f'{W}/없음')
 check('M lessons pull 0건이면 종료 2(improve.md: 2·4·5·6번 건너뜀)', c == 2, o)
 
+# N. 2026-11-05 반영 단계(waiting 기한 알림, 미수집 검색어 회차당 3개)
+W = setup()
+os.makedirs(f'{W}/fbw/proposals'); os.makedirs(f'{W}/fbw/decisions')
+now = _dt.datetime.now(_dt.timezone.utc); iso = lambda d: (now - _dt.timedelta(days=d)).strftime('%Y-%m-%dT%H:%M:%SZ')
+for pid, data in {'p1': {'status': 'pending'}, 'p2': {'status': 'needs_chat', 'created': iso(9)},
+                  'p3': {'status': 'applied', 'collect_pending': True, 'applied_at': iso(1)}, 'p4': {'status': 'applied', 'applied_at': iso(20)}}.items():
+    json.dump({'id': pid, 'data': data}, open(f'{W}/fbw/proposals/{pid}.json', 'w'))
+json.dump({'id': 'p2', 'data': {'decision': 'approve', 'at': iso(5)}}, open(f'{W}/fbw/decisions/p2.json', 'w'))
+c, o = run(W, 'waiting', f'{W}/fbw')
+check('N waiting: 승인 대기·채팅 반영 대기(결정 시각 기준 5일)·수집 통합 대기, 기한 3일 넘김만 매일 알림',
+      '승인 대기 1 · 채팅 반영 대기 1(가장 오래 5일) · 수집 통합 대기 1(가장 오래 1일)' in o and '기한(3일) 넘김: p2(5일)' in o and '매일 알림: 예' in o, o)
+json.dump({'id': 'p2', 'data': {'decision': 'approve', 'at': iso(1)}}, open(f'{W}/fbw/decisions/p2.json', 'w'))
+c, o = run(W, 'waiting', f'{W}/fbw')
+check('N waiting: 기한 안이면 매일 알림 아니오', '매일 알림: 아니오' in o, o)
+wl = open(f'{W}/watchlist.md', encoding='utf-8').read()
+w_old = next(l for l in wl.splitlines() if l.startswith('- '))
+jl(W, 'patches.jsonl', [{'id': 'p40', 'file': 'watchlist.md', 'old': w_old, 'new': w_old + ''.join(f'\n- 새검색어{i} | 국내' for i in range(5))}])
+board(W, 'fb0', {'p40': 'applied'})
+c, o = run(W, 'patch', '--keep', 'main', f'{W}/fb0')
+pc = open(f'{W}/pending_collect.txt').read().split('\n')[:-1]
+check('N 미수집 검색어는 회차마다 3개만 돌려 씀', len(pc) == 3 and all(x.startswith('새검색어') for x in pc) and '5개 중 3개' in o, o + str(pc))
+
 print(f'\n{fails} failed'); sys.exit(1 if fails else 0)

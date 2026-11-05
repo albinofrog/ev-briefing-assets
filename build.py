@@ -29,6 +29,7 @@
   python3 build.py rated           /tmp/ev/metrics.md 최근 발행 10회차(핵심·참고 합 1 이상인 줄) 평가 칸 합
   python3 build.py effect DIR N [지표...]  반영 N(metrics.md 줄 번호) 전후 발행 회차를 지표별로 개선·악화·효과 없음·판정불가·대기로 판정
                                    (기본 유용비율·FP·OVER·UNDER, DIR: 보드 items·feedback. metrics.md 지표만 볼 때 DIR은 -. 기준은 EFF)
+  python3 build.py waiting DIR     보드 사본의 승인 대기·채팅 반영 대기·수집 통합 대기 건수와 기한(SLA_DAYS) 넘김, 매일 알림 여부
   python3 build.py lessons pull DIR|push|import FILE  교훈 원본(보드 lessons) ↔ /tmp/ev/lessons.md, 바뀐 줄만 lessons_board.json, 메모리 백업 색인 lessons_index.md
   python3 build.py probe           이번 회차 놓침 탐지 검색어 4개(rules.md 9절에서 metrics.md 회차 수로 순환, 검색어 언어로 연월을 붙임)
   python3 build.py board FILE [nodeliver]   briefing.json → 피드백 보드 db 쓰기 목록(/tmp/ev/board.json). 전달 실패면 nodeliver(항목 제외)
@@ -1850,6 +1851,28 @@ def waiting_count(d):
     return sum(1 for p in doc_rows(d, 'proposals') if p.get('status') == 'pending' and p['_id'] not in done)
 
 
+def waiting(d, now=None):
+    """보드 사본(DIR/proposals·decisions) → 승인 대기·채팅 반영 대기(needs_chat)·수집 통합 대기(collect_pending)와 가장 오래된 대기 일수.
+    채팅 반영·수집 통합이 SLA_DAYS일 넘게 밀린 것이 있으면 '매일 알림'(improve.md 8번)."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    at = {x['_id']: x.get('at') or '' for x in doc_rows(d, 'decisions')}
+    def age(s):
+        try: return (now - dt.datetime.fromisoformat(s.replace('Z', '+00:00'))).days
+        except (ValueError, AttributeError): return None
+    props = doc_rows(d, 'proposals')
+    pend = waiting_count(d)
+    chat = [(p['_id'], age(at.get(p['_id']) or p.get('created') or '')) for p in props if p.get('status') == 'needs_chat']
+    coll = [(p['_id'], age(p.get('applied_at') or '')) for p in props if p.get('status') == 'applied' and p.get('collect_pending')]
+    old = lambda xs: max([a for _, a in xs if a is not None] + [0])
+    late = [f'{i}({a}일)' for i, a in chat + coll if a is not None and a > SLA_DAYS]
+    print(f"승인 대기 {pend} · 채팅 반영 대기 {len(chat)}(가장 오래 {old(chat)}일) · 수집 통합 대기 {len(coll)}(가장 오래 {old(coll)}일)")
+    print(f"기한({SLA_DAYS}일) 넘김: {', '.join(late) or '없음'}")
+    print('매일 알림: ' + ('예' if late else '아니오'))
+
+
+SLA_DAYS = 3  # 채팅 반영·수집 통합 기한(승인·적용 뒤 일수)
+
+
 def decide(d, layer=None):
     """보드 proposals·decisions(DIR/<컬렉션>/<id>.json) → 처리할 결정(decisions.txt)과 승인분 수정(patches_new.jsonl).
     layer를 주면 그 계층 개선안만(준비 단계의 auto 당일 적용)."""
@@ -1891,6 +1914,7 @@ def prompt_text(ref):
 
 
 AUTO_FILES = {'watchlist.md', 'sources.md'}
+PENDING_MAX = 3  # 저장소 통합 전 새 검색어를 회차가 대신 찾는 최대 개수
 COLLECT_SECS = ('A', 'B', 'E')  # collect.py(GitHub Actions)가 읽는 sources.md 절. 나머지 절(C·D·F·G·H)은 회차의 build.py가 사본으로 바로 씀
 
 
@@ -1974,10 +1998,14 @@ def patch_cmd(ref, keep_only=False, board_dir=None, auto=False):
     open(f'{W}/collect_scope.txt', 'w', encoding='utf-8').write(''.join(x + '\n' for x in coll))  # improve.md 2·3번: 이 개선안은 collect_pending, 교훈은 패치 n(측정은 통합 회차부터)
     terms = [l[2:].split(' | ')[0].strip() for e in keep if e['id'] in live and e.get('file') == 'watchlist.md'
              for l in (e.get('new') or '').splitlines() if l.startswith('- ') and l not in (e.get('old') or '').splitlines()]
+    allterms = terms
+    if len(terms) > PENDING_MAX:  # 보조 15회 잠식 방지: 회차(날짜)마다 PENDING_MAX개씩 돌려 씀(제021~028호 12/15회 소진)
+        k = dt.date.today().toordinal() % len(terms)
+        terms = (terms[k:] + terms[:k])[:PENDING_MAX]
     open(f'{W}/pending_collect.txt', 'w', encoding='utf-8').write(''.join(t + '\n' for t in terms))
     if coll:
         print(f"수집 범위 수정 {len(coll)}건({', '.join(coll)}): 저장소 통합 전까지 GitHub Actions 수집에 들어가지 않음(→ {W}/collect_scope.txt)"
-              + (f" → 새 검색어 {len(terms)}개 {W}/pending_collect.txt(회차가 WebSearch로 대신 찾음)" if terms else ''))
+              + (f" → 새 검색어 {len(allterms)}개 중 {len(terms)}개 {W}/pending_collect.txt(회차가 WebSearch로 대신 찾음, 회차마다 {PENDING_MAX}개씩 돌려 씀)" if terms else ''))
     print(f'patches_keep.jsonl {len(keep)}줄 → 메모리 patches.md')
 
 
@@ -2187,6 +2215,7 @@ if __name__ == '__main__':
     elif a[0] == 'probe': probe()
     elif a[0] == 'board': board(a[1], 'nodeliver' not in a[2:])
     elif a[0] == 'guard': guard(a[1], a[2])
+    elif a[0] == 'waiting': waiting(a[1])
     elif a[0] == 'decide': decide(a[1], a[2] if len(a) > 2 else None)
     elif a[0] == 'patch':
         k = '--keep' in a; au = '--auto' in a; r = [x for x in a[1:] if x not in ('--keep', '--auto')]
