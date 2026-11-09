@@ -1434,7 +1434,7 @@ def feedback(d, since):
         if not it or v not in vmap: continue
         cnt['평가'] += 1; cnt['유용'] += v == 'useful'
         tier = {'core': '핵심', 'ref': '참고'}[it['tier']]
-        gold.append(f"{it['issue']} | {it['key']} | {it['url']} | {lab[v] or tier} | {(f.get('note') or '').strip()[:80]}")  # 같은 해시 줄은 gold.md에서 교체
+        gold.append(f"{it['issue']} | {it['key']} | {it['url']} | {lab[v] or tier} | {(f.get('note') or '').strip()[:80]}")  # 평가 세트 정답(chat_ops.md 4번)
         if vmap[v]:
             sig.append(f"{vmap[v]} | 제{it['issue']:03d}호 | {it['headline'][:40]} | {it['url']} | R{it.get('relevance')} {tier} | {(f.get('note') or '').strip()[:80]}")
     last = max([o.get('issue') or 0 for o in items.values()] + [0]) or '-'  # 제보는 보드의 최신 호에 붙임
@@ -2375,10 +2375,10 @@ def lesson_rows(path):
 
 
 def lessons_cmd(sub, arg=None):
-    """교훈 원본은 보드 `lessons`(문서 id = L번호, data.line = lessons.md 한 줄). 메모리 lessons.md는 한 줄 색인 백업.
+    """교훈 원본은 보드 `lessons`(문서 id = L번호, data.line = lessons.md 한 줄). 전문 백업은 보드 lessons_backup(메모리에는 쓰지 않음).
     pull DIR: 보드 사본(DIR/lessons/*.json) → W/lessons.md, W/lessons_base.json(받은 그대로). 0건이면 종료 2.
     push: W/lessons.md를 base와 비교해 바뀐·새 줄만 W/lessons_board.json(ArtifactData batch), 사라진 줄은 removed 표시,
-          메모리 백업용 W/lessons_index.md. import FILE: base 없이 FILE 전체를 push(처음 옮길 때)."""
+          W/lessons_index.md(한 줄 색인, 채팅 확인용). import FILE: base 없이 FILE 전체를 push(처음 옮길 때)."""
     base_p, cur_p = f'{W}/lessons_base.json', f'{W}/lessons.md'
     if sub == 'attach': return lessons_attach()
     if sub == 'pull':
@@ -2423,7 +2423,7 @@ def lessons_cmd(sub, arg=None):
     print(f'{W}/lessons_board.json ({len(ops)}건: 바뀜·새 {len(ops) - len(gone)}, 없어짐 {len(gone)}' + (f' {",".join(gone)}' if gone else '')
           + ') → ArtifactData batch(50건씩), 성공하면 lessons commit\n'
           f'{W}/lessons_backup.json (전문 {len(rows)}줄) → 보드 lessons_backup/<YYYYMMDD> set(file_path)\n'
-          f'{W}/lessons_index.md ({len(rows)}줄) → 백업이 성공하면 메모리 lessons.md 덮어쓰기(색인)')
+          f'{W}/lessons_index.md ({len(rows)}줄, 한 줄 색인)')
 
 
 GOAL_OF = {'FP': ('관련성', 'judge'), 'OVER': ('관련성', 'judge'), 'UNDER': ('관련성', 'judge'), 'XJ': ('관련성', 'judge'),
