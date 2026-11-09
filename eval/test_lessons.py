@@ -74,6 +74,31 @@ setup(['L1 | 관찰 | 관련성 | judge | FP | 1 | ' + '; '.join(f'제0{i:02d}�
 code, out = run('lessons', 'attach')
 ev = les()['L1'][6]
 check('attach: 근거 칸이 길면 오래된 근거부터 생략', code == 0 and len(ev) <= 1500 + 20 and ev.endswith('이전 근거 생략') and ev.startswith('제040호'), str(len(ev)))
+# 왕복 방지(propcheck): p3 적용 → p19 되돌림 → p22 재적용 같은 세 번째 전환은 마지막 전환 뒤 발행 20회차 안이면 사용자 근거 없이는 막음
+E1 = [{'file': 'rules.md', 'old': 'WebSearch 1회와', 'new': 'WebSearch 1회(site:공식 도메인)와'}]
+INV = [{'file': 'rules.md', 'old': 'WebSearch 1회(site:공식 도메인)와', 'new': 'WebSearch 1회와'}]
+def prop(i, st, at, ed, ev='', title=''):
+    os.makedirs(f'{T}/fb/proposals', exist_ok=True)
+    json.dump({'id': i, 'data': {'status': st, 'applied_at': at, 'edits': ed, 'evidence': ev, 'title': title or i}}, open(f'{T}/fb/proposals/{i}.json', 'w'), ensure_ascii=False)
+setup(BASE, [])
+prop('p3', 'applied', '2026-11-01T00:00:00Z', E1); prop('p19', 'applied', '2026-11-20T00:00:00Z', INV)
+prop('p30', 'pending', None, [{'file': 'rules.md', 'old': '- 3: 나머지. 관세', 'new': '- 3: 나머지(수정). 관세'}])
+json.dump([{'id': 'p40', 'title': 'p3 재상정', 'evidence': 'effect 재판정', 'edits': E1},
+           {'id': 'p41', 'title': 'p3 재상정(사용자)', 'evidence': '사용자 보드 평가 과소 2건', 'edits': E1},
+           {'id': 'p42', 'title': '같은 줄', 'evidence': 'x', 'edits': [{'file': 'rules.md', 'old': '- 3: 나머지. 관세', 'new': 'y'}]},
+           {'id': 'p43', 'title': '다른 줄', 'evidence': 'x', 'edits': [{'file': 'rules.md', 'old': '전혀 다른 줄', 'new': 'z'}]}],
+          open(f'{T}/proposals_new.json', 'w'), ensure_ascii=False)
+code, out = run('propcheck', f'{T}/fb')
+left = [x['id'] for x in json.load(open(f'{T}/proposals_new.json'))]
+check('propcheck: 두 번 오간 수정을 사용자 근거 없이 또 바꾸면 제외(p40)', 'p40' not in left and '2번 오감' in out, out)
+check('propcheck: 사용자 근거가 있으면 통과(p41)', 'p41' in left, out)
+check('propcheck: 대기 중 개선안과 같은 줄이면 제외(p42)', 'p42' not in left and 'p30(대기 중)' in out, out)
+check('propcheck: 다른 줄은 통과(p43)', 'p43' in left, out)
+json.dump([{'id': 'p44', 'title': 'p3 되돌림', 'evidence': 'effect 악화', 'edits': INV}], open(f'{T}/proposals_new.json', 'w'), ensure_ascii=False)
+os.remove(f'{T}/fb/proposals/p19.json')
+code, out = run('propcheck', f'{T}/fb')
+check('propcheck: 처음 되돌림(한 번 반영된 수정)은 통과', [x['id'] for x in json.load(open(f'{T}/proposals_new.json'))] == ['p44'], out)
+
 code, out = run('lessons', 'push') if os.path.exists(f'{T}/lessons_base.json') else (0, '')
 print(f'\n{"전부 통과" if not fails else "실패 " + ", ".join(fails)}')
 sys.exit(1 if fails else 0)

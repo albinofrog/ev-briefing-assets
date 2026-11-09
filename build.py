@@ -35,6 +35,7 @@
   python3 build.py nextid DIR      보드 proposals의 다음 p번호(숫자 비교)
   python3 build.py probe           이번 회차 놓침 탐지 검색어 4개(rules.md 9절에서 metrics.md 회차 수로 순환, 검색어 언어로 연월을 붙임)
   python3 build.py board FILE [nodeliver]   briefing.json → 피드백 보드 db 쓰기 목록(/tmp/ev/board.json). 전달 실패면 nodeliver(항목 제외)
+  python3 build.py propcheck DIR    새 개선안(/tmp/ev/proposals_new.json) 중 대기 중 개선안과 같은 줄을 고치거나 이미 오간 수정을 또 바꾸는 것을 뺌
   python3 build.py batchcheck DIR ID [EFFECT] [TITLE]   채팅 반영 전 묶음 금지 검사(effect 지표가 겹치는 변경이 반영 뒤 발행 BATCH_WIN회차 안이면 종료 1)
   python3 build.py audit check AUDIT.json ITEMS_DIR | board AUDIT.json WEEK | score DIR   주간 놓침 감사(독립 탐색 목록 ↔ 장부·보드 수록 대조, 보드 audit 쓰기, 주별 놓침률)
   python3 build.py guard OLD NEW   rules.md 고정 줄(사업 맥락·금지 항목·예산·금지 출처)이 바뀌었으면 종료 1
@@ -2172,8 +2173,8 @@ def patch_cmd(ref, keep_only=False, board_dir=None, auto=False):
 BATCH_WIN = 10  # 묶음 금지 창(가.3 측정 기준): effect 지표가 겹치는 변경은 앞 변경 반영 뒤 발행 10회차가 지나야 적용
 EFFECT_NAMES = ('핵심', '참고', '웹', '평가', '유용', '검토율', '주제공백', '수집실패', '이월', '놓침', '출처12비율', '자체판정2', '자체판정1',
                 '핵심원출처', '관련12본문', '참고원출처', '관련12건수', '유용비율', 'FP', 'OVER', 'UNDER', '중복경고', '중복채택', '전달후발견')
-MEASURE_DEFS = ('pub_lines', 'rated', 'targets', 'scorecard', 'mval', 'judge_diff', 'effect', 'effect_keys', 'pub_since', 'batch_block', 'measure_touch')
-MEASURE_RX = re.compile(r'^(EFF|EVAL_K|RATIO_K|HIGHER|BATCH_WIN|EFFECT_NAMES|MEASURE_DEFS|MEASURE_RX|SCORE_FIXTURE|COLLAPSE)\b', re.M)  # 마지막 둘: 건강 검사 기준(개선안이 검사 쪽을 고쳐 통과하지 않게)
+MEASURE_DEFS = ('pub_lines', 'rated', 'targets', 'scorecard', 'mval', 'judge_diff', 'effect', 'effect_keys', 'pub_since', 'batch_block', 'measure_touch', 'edit_set', 'propcheck')
+MEASURE_RX = re.compile(r'^(EFF|EVAL_K|RATIO_K|HIGHER|BATCH_WIN|EFFECT_NAMES|MEASURE_DEFS|MEASURE_RX|SCORE_FIXTURE|COLLAPSE|SWING_WIN|USER_EVID)\b', re.M)  # 건강 검사·왕복 방지 기준(개선안이 검사 쪽을 고쳐 통과하지 않게)
 
 
 def effect_keys(s):
@@ -2219,6 +2220,49 @@ def measure_touch(ed):
         tops = re.findall(r'^(?![ \t#\n]).+', t[:i], re.M)  # 그 위치를 감싸는 최상위 문장(def 또는 여러 줄 상수)
         if tops and (MEASURE_RX.search(tops[-1]) or re.match(r'def (' + '|'.join(MEASURE_DEFS) + r')\b', tops[-1])): return True
     return False
+
+
+SWING_WIN = 20  # 왕복 방지 창(발행 회차): 같은 수정이 두 번 이상 오갔으면 마지막 전환 뒤 이 기간 동안 사용자 근거 없이는 다시 바꾸지 않음
+USER_EVID = re.compile(r'MISS-U|사용자|감사 놓침|UNDER|OVER|불필요|보드 평가|거절 메모')
+
+
+def edit_set(p):
+    return {(e.get('file'), e.get('old') or '', e.get('new') or '') for e in (p.get('edits') or []) if isinstance(e, dict)}
+
+
+def propcheck(new, props):
+    """새 개선안 목록 → (통과, [(id, 사유)]). 막는 경우: (1) 대기 중(pending·needs_chat·held) 개선안과 같은 줄을 고침,
+    (2) 같은 수정(또는 그 되돌림)이 이미 두 번 이상 반영돼 오갔고 마지막 전환 뒤 발행 SWING_WIN회차가 안 지났는데 근거에 사용자 신호가 없음."""
+    ok, bad = [], []
+    waiting = {q: o for q, o in props.items() if o.get('status') in ('pending', 'needs_chat', 'held')}
+    applied = sorted(((o.get('applied_at'), q, edit_set(o)) for q, o in props.items() if o.get('status') == 'applied' and o.get('applied_at')), key=lambda x: x[0])
+    for pr in new:
+        es, why = edit_set(pr), ''
+        for q, o in waiting.items():
+            if q != pr.get('id') and any(f == f2 and old and o2 and (old in o2 or o2 in old) for f, old, _ in es for f2, o2, _ in edit_set(o)):
+                why = f'{q}(대기 중)와 같은 줄을 고침: 한쪽이 결정된 뒤 다시 올림'; break
+        if not why and es and not USER_EVID.search(pr.get('evidence') or ''):
+            for f, old, nw in es:
+                tog = [(at, q) for at, q, s in applied if (f, old, nw) in s or (f, nw, old) in s]  # 이 수정과 그 되돌림이 반영된 기록
+                if len(tog) >= 2:
+                    try: n = pub_since(kst(tog[-1][0]).strftime('%Y-%m-%d'))
+                    except ValueError: continue
+                    if n < SWING_WIN:
+                        why = f"같은 수정이 이미 {len(tog)}번 오감({'→'.join(q for _, q in tog)}), 마지막 전환 뒤 발행 {n}/{SWING_WIN}회차: 사용자 근거 없이 다시 바꾸지 않음"; break
+        (bad.append((pr.get('id'), why)) if why else ok.append(pr))
+    return ok, bad
+
+
+def propcheck_cmd(d):
+    """W/proposals_new.json을 보드 proposals 사본(DIR)과 대조해 막힌 개선안을 빼고 다시 씀(improve.md 4번)."""
+    p = f'{W}/proposals_new.json'
+    if not os.path.exists(p): print('proposals_new.json 없음: 새 개선안 0건'); return
+    props = {o['_id']: o for o in doc_rows(d, 'proposals')} if os.path.isdir(f'{d}/proposals') else None
+    if props is None: sys.exit(f'보드 proposals 없음: {d}/proposals (보드를 못 읽었으면 새 개선안을 내지 않음)')
+    ok, bad = propcheck(json.load(open(p, encoding='utf-8')), props)
+    json.dump(ok, open(p, 'w', encoding='utf-8'), ensure_ascii=False)
+    print(f'새 개선안 {len(ok)}건 통과, {len(bad)}건 제외 → {p}')
+    for pid, why in bad: print(f'  제외 {pid}: {why} (그 교훈은 관찰로 되돌리고 오류에 적음)')
 
 
 def batchcheck(d, pid, effect_txt=None, title=None):
@@ -2566,6 +2610,7 @@ if __name__ == '__main__':
     elif a[0] == 'snapshot': snapshot(a[1])
     elif a[0] == 'cases': cases(a[1], a[2], a[3])
     elif a[0] == 'audit': audit_cmd(a[1], a[2:])
+    elif a[0] == 'propcheck': propcheck_cmd(a[1])
     elif a[0] == 'batchcheck': batchcheck(a[1], a[2], a[3] if len(a) > 3 else None, a[4] if len(a) > 4 else None)
     elif a[0] == 'selftest': sys.exit(0 if selftest() else 1)
     else: sys.exit(__doc__)
