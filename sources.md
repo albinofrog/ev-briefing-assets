@@ -24,7 +24,6 @@ GitHub Actions의 collect.py가 매시간 예약으로(예약이 자주 건너�
 - Insurance Journal | 미국 | rss | https://www.insurancejournal.com/rss/news/national/ |
 - Electrek | 미국 | rss | https://electrek.co/feed/ | 전체
 - Repairer Driven News | 미국 | rss | https://www.repairerdrivennews.com/feed/ |
-- Auto Remarketing | 미국 | rss | https://www.autoremarketing.com/feed/ |
 - CBT News | 미국 | rss | https://www.cbtnews.com/feed/ |
 - 미국 에너지부 | 미국 | html:/articles/ | https://www.energy.gov/newsroom |
 - 第一财经 | 중국 | html:/news/\d+\.html | https://www.yicai.com/news/ |
