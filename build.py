@@ -72,6 +72,7 @@ ASSETS = [('template.html', f'{W}/template.html'), ('sources.md', f'{W}/sources.
           ('fonts/archivonarrow.woff2', f'{FONTS}/archivonarrow.woff2'),
           ('fonts/lgsmart.woff2', f'{FONTS}/lgsmart.woff2'), ('serv04_img_01.png', f'{FONTS}/bonce.png'),
           (DATA + 'items.jsonl', f'{W}/items.jsonl'), (DATA + 'status.json', f'{W}/status.json')]
+REF_PINNED = ('template.html', 'sources.md', 'watchlist.md')  # ref에 고정해 받는 자산(수집 데이터는 data 브랜치, 글꼴·로고는 main)
 
 SCHEMA = r'''
 {
@@ -219,9 +220,9 @@ def prep():
         print(f'중단: 다른 회차가 {running}에 시작해 진행 중일 수 있음(3시간 이내)')
         sys.exit(2)
     fails = []
-    # template.html은 build.py와 함께 바뀌므로 config.md의 ref 커밋에 고정(나.1이 /tmp/ev/ref.txt에 저장). 없으면 main
+    # template.html·sources.md·watchlist.md는 build.py와 함께 config.md의 ref 커밋에 고정(나.1이 /tmp/ev/ref.txt에 저장, 같은 ref로 다시 돌리면 같은 입력). 없으면 main
     ref = open(f'{W}/ref.txt').read().strip() if os.path.exists(f'{W}/ref.txt') else ''
-    assets = [(REPO.replace('/main/', f'/{ref}/') + s if ref and s == 'template.html' else s, d) for s, d in ASSETS]
+    assets = [(REPO.replace('/main/', f'/{ref}/') + s if ref and s in REF_PINNED else s, d) for s, d in ASSETS]
     for src, dst in assets:
         err = curl(src, dst)
         if err: fails.append(src.split('/')[-1])
@@ -2086,7 +2087,7 @@ def patch_cmd(ref, keep_only=False, board_dir=None, auto=False):
     """적용 중인 수정(patches.jsonl)을 파일 사본에 다시 적용하고, 새 승인분(patches_new.jsonl)은 고정 줄·문법·회귀 검사를 통과한 것만 더함.
     결과 patches_keep.jsonl(메모리 patches.md에 저장할 내용)."""
     for f in ('sources.md', 'watchlist.md'):
-        if not os.path.exists(f'{W}/{f}'): curl(f, f'{W}/{f}')
+        if not os.path.exists(f'{W}/{f}'): curl(REPO.replace('/main/', f'/{ref}/') + f if ref and ref != 'main' else f, f'{W}/{f}')
     keep, out, live, scope = [], [], set(), set()  # scope: 수집 범위 수정. live: 사본에만 들어가고 저장소에는 아직 없는 개선안
     ptxt = prompt_text(ref)
     status = None
