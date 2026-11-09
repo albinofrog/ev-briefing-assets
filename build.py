@@ -104,6 +104,52 @@ SCHEMA = r'''
 '''
 
 
+COLLAPSE = {'win_h': 72, 'days': 14, 'min_base': 5, 'ratio': 0.15, 'zero_h': 48}  # 수집량 급감 경보: 정상 회차 최저 비율이 약 0.19(10-05·10-25)라 그 아래만 경보
+
+
+def collect_collapse(start, path=None):
+    """수집 경로(list·watch)별 최근 72시간 새 항목 수가 지난 14일 같은 시각 72시간 창 중앙값의 15% 미만이거나 48시간 0건이면 경보. (판정, 문구)
+    구글 경로 중단(google_down)·48시간 0건 소스 경고로 안 잡히는 수집기 전체 고장(대부분 소스가 조용히 줄어듦)을 잡음."""
+    p = path or f'{W}/items.jsonl'
+    if not os.path.exists(p): return False, ''
+    ts = {}
+    for ln in open(p, encoding='utf-8'):
+        if not ln.strip(): continue
+        try: o = json.loads(ln); t = dt.datetime.fromisoformat(o['first_seen'].replace('Z', '+00:00'))
+        except (ValueError, KeyError): continue
+        ts.setdefault(o.get('kind') or 'list', []).append(t)
+    H = dt.timedelta(hours=1)
+    cnt = lambda xs, end, h: sum(1 for t in xs if end - h * H <= t < end)
+    bad = []
+    for k, xs in sorted(ts.items()):
+        base = [b for j in range(1, COLLAPSE['days'] + 1) for b in [cnt(xs, start - dt.timedelta(days=j), COLLAPSE['win_h'])] if b > 0]
+        if len(base) < COLLAPSE['min_base']: continue  # 이력이 짧으면 판단 안 함
+        med = sorted(base)[len(base) // 2]
+        now, z = cnt(xs, start, COLLAPSE['win_h']), cnt(xs, start, COLLAPSE['zero_h'])
+        if z == 0 or now < COLLAPSE['ratio'] * med:
+            bad.append(f"{k} 최근 {COLLAPSE['win_h']}시간 {now}건(평소 중앙값 {med}건, 48시간 {z}건)")
+    return bool(bad), ('경고: 수집량 급감(수집기·경로 고장 의심, GitHub Actions 로그 확인): ' + '; '.join(bad)) if bad else ''
+
+
+SCORE_FIXTURE = [  # (제목, 최소 점수, 최대 점수): 점수 규칙(R1·R2·BROAD 등)과 sources.md 단어가 고장 나면 잡음(11-03 정규식 \\b 버그 같은 경우)
+    ('Used EV lease returns: residual values fall 5%', 3, 9), ('Startup offers SOH certificate for used electric cars', 3, 9),
+    ('EU Data Act gives owners in-vehicle data access', 3, 9), ('New BMS diagnostics via OBD port for EV fleets', 3, 9),
+    ('중고 전기차 배터리 성능평가 인증제 시행', 3, 9), ('전기차 잔존가치 하락, 리스사 부담', 3, 9), ('Restwert von Elektroautos steigt', 3, 9),
+    ('中古EV、バッテリー診断で残価を可視化', 3, 9), ('二手新能源车 电池检测 评估 标准发布', 3, 9), ('EV insurance premiums tied to battery data', 3, 9),
+    ('electric vehicle lease prices drop', 2, 9), ('EV battery passport rules take effect', 2, 9),
+    ('Tesla unveils new Model Y trim', -9, 1), ('Fed raises interest rates', -9, 0)]
+
+
+def score_selftest():
+    """SCORE_FIXTURE 제목의 점수가 기대 범위 밖이면 그 목록(빈 목록이면 통과)."""
+    out = []
+    for t, lo, hi in SCORE_FIXTURE:
+        try: sc = score_item({'title': t})[0]
+        except Exception as e: out.append(f'{t[:30]}: 오류 {type(e).__name__}'); continue
+        if not lo <= sc <= hi: out.append(f'{t[:30]}: 점수 {sc}(기대 {lo}~{hi})')
+    return out
+
+
 def google_down(status):
     """주제 검색의 구글 경로 중단 의심: 검색어 절반 이상이 '구글 0건' 아닌 사유로 Bing 예비 수집. (판정, 경고 문구)"""
     wv = status.get('watch', {})
@@ -274,6 +320,11 @@ def prep():
     if wfail: print('경고: 추적 검색어 조회 실패: ' + ', '.join(wfail))
     st['gdown'], gmsg = google_down(status)
     if st['gdown']: print(gmsg)
+    st['collapse'], cmsg = collect_collapse(kst(st['start']))
+    if st['collapse']: print(cmsg)
+    sbad = score_selftest()
+    st['scorefail'] = bool(sbad)
+    if sbad: print('경고: 점수 자체 검사 실패(점수 규칙·sources.md 단어 고장 의심, 이번 후보 점수 구간을 믿기 어려움): ' + '; '.join(sbad[:4]))
     if bad:
         urls = dict(re.findall(r'^- ([^|]+?) \| [^|]+\| [^|]+\| (https?://\S+)', open(f'{W}/sources.md').read(), re.M))
         print('수집 실패 목록(직접 확인 대상):')
@@ -1029,6 +1080,8 @@ def render(path):
     if fails:
         push = '[실패] ' + ','.join(sorted(set(f.split(':')[0] for f in fails))) + ' ' + push
     if st.get('gdown'): push = '[경고] 구글 수집 중단 ' + push
+    if st.get('collapse'): push = '[경고] 수집량 급감 ' + push
+    if st.get('scorefail'): push = '[경고] 점수 검사 실패 ' + push
     nw = waiting_count(f'{W}/fb0')  # 준비 단계(프롬프트 나.3)가 받은 보드 사본 기준
     if nw: push = f'[승인 대기 {nw}] ' + push
     bu = board_url()
@@ -1897,7 +1950,9 @@ def selftest():
     got = {n: iss for n, iss, *_ in runlog_hits([x for x, _ in RL_PROBE], RL_FIXTURE)}
     bad = [f"{x['headline'][:20]}: 기대 {want or '없음'}, 결과 {got.get(i) or '없음'}" for i, (x, want) in enumerate(RL_PROBE, 1) if got.get(i) != want]
     print('selftest 중복 대조: ' + ('통과' if not bad else '실패 ' + '; '.join(bad)))
-    return not bad
+    sb = score_selftest()
+    print('selftest 점수 규칙: ' + ('통과' if not sb else '실패 ' + '; '.join(sb)))
+    return not bad and not sb
 
 
 def gate(ref):
@@ -2117,7 +2172,7 @@ BATCH_WIN = 10  # 묶음 금지 창(가.3 측정 기준): effect 지표가 겹�
 EFFECT_NAMES = ('핵심', '참고', '웹', '평가', '유용', '검토율', '주제공백', '수집실패', '이월', '놓침', '출처12비율', '자체판정2', '자체판정1',
                 '핵심원출처', '관련12본문', '참고원출처', '관련12건수', '유용비율', 'FP', 'OVER', 'UNDER', '중복경고', '중복채택', '전달후발견')
 MEASURE_DEFS = ('pub_lines', 'rated', 'targets', 'scorecard', 'mval', 'judge_diff', 'effect', 'effect_keys', 'pub_since', 'batch_block', 'measure_touch')
-MEASURE_RX = re.compile(r'^(EFF|EVAL_K|RATIO_K|HIGHER|BATCH_WIN|EFFECT_NAMES|MEASURE_DEFS|MEASURE_RX)\b', re.M)
+MEASURE_RX = re.compile(r'^(EFF|EVAL_K|RATIO_K|HIGHER|BATCH_WIN|EFFECT_NAMES|MEASURE_DEFS|MEASURE_RX|SCORE_FIXTURE|COLLAPSE)\b', re.M)  # 마지막 둘: 건강 검사 기준(개선안이 검사 쪽을 고쳐 통과하지 않게)
 
 
 def effect_keys(s):
@@ -2160,8 +2215,8 @@ def measure_touch(ed):
             return True
         i = t.find(old)
         if i < 0 or not re.match(r'[ \t]', t[t.rfind('\n', 0, i) + 1:i + 1] or 'x'): continue  # 최상위 줄은 위 상수 검사로 충분
-        defs = re.findall(r'^def (\w+)', t[:i], re.M)
-        if defs and defs[-1] in MEASURE_DEFS: return True
+        tops = re.findall(r'^(?![ \t#\n]).+', t[:i], re.M)  # 그 위치를 감싸는 최상위 문장(def 또는 여러 줄 상수)
+        if tops and (MEASURE_RX.search(tops[-1]) or re.match(r'def (' + '|'.join(MEASURE_DEFS) + r')\b', tops[-1])): return True
     return False
 
 
