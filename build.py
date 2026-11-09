@@ -1674,26 +1674,32 @@ def coverage():
                 'value', 'values', 'prices', 'price', '전기차', '배터리', '자동차', '데이터', '차량', '중고', 'ev', 'evs', '电池', 'バッテリー', 'batterie',
                 # 대주제를 가리지 못하는 넓은 단어(공백을 가리지 않도록 제외)
                 'sales', 'returns', 'state', 'regulation', 'quarter', 'registrations', '등록', '신규', '규제', '반납', '新能源汽车', '合作', '投资',
-                '协议', '政策', '标准', '发布', '価格', '販売台数', 'implementing', 'act'}
+                '协议', '政策', '标准', '发布', '価格', '販売台数', 'implementing', 'act', '개방'}
     for g in gs:
         g['srcs'] = {items[uhash(u)]['src'] for u in g['urls'] if uhash(u) in items}
         g['regions'] = {items[uhash(u)].get('region') or region_of(items[uhash(u)]) for u in g['urls'] if uhash(u) in items}
         g['inc'] = any(uhash(u) in inc for u in g['urls'])
         g['doms'] = {item_dom(items[uhash(u)]) for u in g['urls'] if uhash(u) in items}
     secs = watch_sections()
-    cellq, refsec = {}, set()  # (대주제, 국내/국외) → 검색어, 관련도 3 중심 대주제(제목 줄 `| 참고`)
+    cellq, refsec, topicw = {}, set(), {}  # (대주제, 국내/국외) → 검색어, 관련도 3 중심 대주제(제목 줄 `| 참고`), 대주제 → `주제어:` 줄 단어
     cur = None
     for ln in open(f'{W}/watchlist.md', encoding='utf-8'):
         if ln.startswith('## '):
             cur = ln[3:].split('|')[0].strip()
             if '참고' in ln[3:].partition('|')[2]: refsec.add(cur)
+        elif cur and ln.startswith('주제어:'): topicw[cur] = [w.strip().lower() for w in ln[4:].split(',') if w.strip()]
         elif cur and ln.startswith('- '): cellq.setdefault((cur, watch_dom(ln)), []).append(ln[2:].split('|')[0].strip())
+    def thit(w, t):  # 주제어 일치: 영문은 앞 단어 경계(lease가 release에 걸리지 않게), 그 밖은 포함 여부
+        return bool(re.search(r'(?<![a-z])' + re.escape(w), t)) if re.fullmatch(r'[\x00-\x7f]+', w) else w in t
     rows, gaps = [], []
     for name, qs in secs:
         w = [status.get('watch', {}).get(q, {}) for q in qs]
         kws = {k.lower() for q in qs for k in re.findall(r'"([^"]+)"', q)} | {k.lower() for q in qs for k in re.sub(r'"[^"]*"|\bOR\b', ' ', q).split() if len(k) >= 4 or re.search('[^\x00-\x7f]', k) and len(k) >= 2}
         kws = {k for k in kws if k not in generic}  # 주제 고유어만(일반 EV 단어로는 주제를 정하지 않음)
-        sel = [g for g in gs if any(s in ('watch:' + q for q in qs) for s in g['srcs']) or any(k in titles.get(g['id'], '') for k in kws)]
+        tw = topicw.get(name, [])
+        on_topic = lambda g: any(k in titles.get(g['id'], '') for k in kws) or any(thit(w, titles.get(g['id'], '')) for w in tw)
+        # 주제어 줄이 있는 대주제는 제목에 주제 단어가 있어야 그 주제로 셈(검색어 출처만으로는 세지 않음). `| 참고` 대주제와 주제어 줄이 없는 대주제는 출처도 셈
+        sel = [g for g in gs if on_topic(g) or (not tw or name in refsec) and any(s in ('watch:' + q for q in qs) for s in g['srcs'])]
         hi = [g for g in sel if g['band'] >= 2]
         r = {'topic': name, 'queries': len(qs), 'failed': sum(1 for x in w if x and not x.get('ok')), 'zero': sum(1 for x in w if x.get('ok') and not x.get('fetched')),
              'cand': len(sel), 'cand_hi': len(hi), 'reviewed_hi': sum(1 for g in hi if done(g['id'])),
