@@ -11,7 +11,7 @@
   - `must`: 사용자가 확인한 놓침(주간 놓침 감사)으로 만든 판정 문항. 여러 실행 과반에서 틀리면 score.py 종료 2(판정 규칙 개정 거부).
   - `status`: `draft`는 사용자 검토 전, `reviewed`는 검토를 마친 정답.
 - `score.py`: 채점기. `replay.md`: 판정 문항용 재현 실행 절차. `results/`: 재현 결과와 점수 기록.
-- `test_patch.py`: 승인 개선안 적용(decide·patch·재적용) 검사(네트워크 필요). `test_review.py`: 검수 반영분(재적용·장부·승격 판정·early_public·trace C9 등) 검사. `test_audit.py`: 주간 놓침 감사(audit), 감사 판정의 놓침 신호 연결, 필수 문항(감사에서 확인한 놓침, `must`) 생성과 score.py 게이트(종료 2) 검사. `test_health.py`: 수집량 급감 경보(collect_collapse)와 점수 규칙 자체 검사(score_selftest) 검사. build.py를 고치면 넷 다 종료 0이어야 합니다(chat_ops.md).
+- `test_patch.py`: 승인 개선안 적용(decide·patch·재적용) 검사(네트워크 필요). `test_review.py`: 검수 반영분(재적용·장부·승격 판정·early_public·trace C9 등) 검사. `test_audit.py`: 주간 놓침 감사(audit), 감사 판정의 놓침 신호 연결, 필수 문항(감사에서 확인한 놓침, `must`) 생성과 score.py 게이트(종료 2) 검사. `test_health.py`: 수집량 급감 경보(collect_collapse)와 점수 규칙 자체 검사(score_selftest) 검사. `test_lessons.py`: 교훈 장부 자동 갱신(lessons attach: 관찰 수·근거·URL 중복·메모 없는 거절·재상정·새 교훈) 검사. build.py를 고치면 다섯 다 종료 0이어야 합니다(chat_ops.md).
 
 ```
 python3 eval/score.py                         # 현재 build.py

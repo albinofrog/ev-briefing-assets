@@ -30,6 +30,7 @@
   python3 build.py effect DIR N [지표...]  반영 N(metrics.md 줄 번호) 전후 발행 회차를 지표별로 개선·악화·효과 없음·판정불가·대기로 판정
                                    (기본 유용비율·FP·OVER·UNDER, DIR: 보드 items·feedback. metrics.md 지표만 볼 때 DIR은 -. 기준은 EFF)
   python3 build.py waiting DIR     보드 사본의 승인 대기·채팅 반영 대기·수집 통합 대기 건수와 기한(SLA_DAYS) 넘김, 매일 알림 여부
+  python3 build.py lessons attach   signals.md 신호를 교훈에 붙임(관찰 수·근거·새 교훈은 코드가 셈, 고를 것만 /tmp/ev/attach.tsv)
   python3 build.py lessons pull DIR|push|commit|import FILE  교훈 원본(보드 lessons) ↔ /tmp/ev/lessons.md, 바뀐 줄만 lessons_board.json(형식 오류면 멈춤), 전문 백업 lessons_backup.json, 색인 lessons_index.md
   python3 build.py nextid DIR      보드 proposals의 다음 p번호(숫자 비교)
   python3 build.py probe           이번 회차 놓침 탐지 검색어 4개(rules.md 9절에서 metrics.md 회차 수로 순환, 검색어 언어로 연월을 붙임)
@@ -2379,6 +2380,7 @@ def lessons_cmd(sub, arg=None):
     push: W/lessons.md를 base와 비교해 바뀐·새 줄만 W/lessons_board.json(ArtifactData batch), 사라진 줄은 removed 표시,
           메모리 백업용 W/lessons_index.md. import FILE: base 없이 FILE 전체를 push(처음 옮길 때)."""
     base_p, cur_p = f'{W}/lessons_base.json', f'{W}/lessons.md'
+    if sub == 'attach': return lessons_attach()
     if sub == 'pull':
         rows = sorted(((r['_id'], r['line'].strip()) for r in doc_rows(arg, 'lessons') if r.get('line') and not r.get('removed')
                        and re.fullmatch(r'L\d+', r['_id'])), key=lambda r: int(r[0][1:]))
@@ -2422,6 +2424,92 @@ def lessons_cmd(sub, arg=None):
           + ') → ArtifactData batch(50건씩), 성공하면 lessons commit\n'
           f'{W}/lessons_backup.json (전문 {len(rows)}줄) → 보드 lessons_backup/<YYYYMMDD> set(file_path)\n'
           f'{W}/lessons_index.md ({len(rows)}줄) → 백업이 성공하면 메모리 lessons.md 덮어쓰기(색인)')
+
+
+GOAL_OF = {'FP': ('관련성', 'judge'), 'OVER': ('관련성', 'judge'), 'UNDER': ('관련성', 'judge'), 'XJ': ('관련성', 'judge'),
+           'C1': ('충분성', 'auto'), 'C4': ('충분성', 'auto'), 'C5': ('충분성', 'judge'), 'C6': ('충분성', 'judge'),
+           'C9': ('충분성', 'judge'), 'C2': ('충분성', 'judge'), 'C3': ('충분성', 'judge')}  # improve.md 2번 원인 코드별 목표·계층
+EV_MAX = 1500  # 교훈 근거 칸 최대 글자 수(넘으면 오래된 근거부터 생략)
+
+
+def lesson_split(l):
+    c = [x.strip() for x in l.split(' | ')]
+    return c[:6], ' | '.join(c[6:-2]), c[-2:]
+
+
+def lessons_attach():
+    """signals.md의 신호를 교훈(W/lessons.md, lessons pull 결과)에 붙임: 같은 원인 코드 교훈 찾기, 관찰 수·근거 갱신, URL 중복·회차당 1회,
+    거절(메모 없음)의 같은 근거 버림·재상정, 새 교훈 번호·시작 회차. 같은 원인 코드 교훈이 여럿이거나 새 교훈의 목표·계층을 정할 수 없으면
+    W/attach.tsv(신호 줄 번호<TAB>L번호|new[<TAB>목표<TAB>계층])의 선택을 따르고, 선택이 없으면 아무것도 쓰지 않고 종료 3."""
+    st = now_state(); iss = st['issue'] + 1
+    sig = [l for l in (open(f'{W}/signals.md', encoding='utf-8').read().splitlines() if os.path.exists(f'{W}/signals.md') else [])]
+    rows = lesson_rows(f'{W}/lessons.md')
+    if not rows: sys.exit('lessons.md 없음·0건: lessons pull을 먼저(improve.md 2번)')
+    L = {lid: list(lesson_split(l)) for lid, l in rows}
+    pick = {}
+    for ln in (open(f'{W}/attach.tsv', encoding='utf-8').read().splitlines() if os.path.exists(f'{W}/attach.tsv') else []):
+        p = [x.strip() for x in ln.split('\t')]
+        if len(p) >= 2 and p[0].isdigit(): pick[int(p[0])] = p[1:]
+    nmet = len([l for l in (open(f'{W}/metrics.md', encoding='utf-8').read().splitlines() if os.path.exists(f'{W}/metrics.md') else [])
+                if re.match(r'\d{4}-\d\d-\d\d \| ', l)]) + 1  # 이번 회차 줄을 넣은 뒤의 줄 수(improve.md 2번 시작 회차)
+    pubn = lambda after: sum(1 for l in pub_lines() if int(l.split('|')[1]) > after)
+    nxt = max(int(k[1:]) for k in L) + 1
+    log, need, todo = [], [], []
+    for i, s in enumerate(sig, 1):
+        c = [x.strip() for x in s.split('|')]
+        if len(c) < 6 or not c[0]: log.append(f'{i} 형식 오류(6칸 미만) 버림'); continue
+        code, url, text = c[0], c[3] if c[3].startswith('http') else '', (c[2] + (' ' + c[5] if c[5] and c[5] != '-' else ''))[:120]
+        m = re.match(r'MISS-([UP]):(C\d)$', code)
+        if m and m.group(2) == 'C7': log.append(f'{i} {code} 수록됨이라 버림'); continue
+        if m and m.group(1) == 'P' and m.group(2) in ('C2', 'C3'): log.append(f'{i} {code} 자체 탐지의 기준 이전·장부 중복은 버림'); continue
+        if m and m.group(2) == 'C8': code = 'OPS:예산-이월'
+        cands = [k for k, (h, _, _) in L.items() if h[4] == code and not h[1].startswith('철회')]
+        ch = pick.get(i)
+        if ch and ch[0] != 'new' and ch[0] in L: tgt = ch[0]
+        elif ch and ch[0] == 'new': tgt = None
+        elif len(cands) == 1: tgt = cands[0]
+        elif len(cands) > 1: need.append(f"{i}\t?\t# {code} 후보 {','.join(cands)} | {text[:60]}"); continue
+        else: tgt = None
+        if tgt is None:
+            base = m.group(2) if m else code.split(':')[0] if code.split(':')[0] in GOAL_OF else code
+            gl = (ch[1], ch[2]) if ch and len(ch) >= 3 else GOAL_OF.get(base) or (('운영', 'meta') if code.startswith('OPS:') else None)
+            if gl is None: need.append(f"{i}\tnew\t<목표>\t<계층>\t# {code} 새 교훈의 목표(충분성·신뢰성·관련성·운영)·계층(auto·judge·code·meta) | {text[:60]}"); continue
+        todo.append((i, code, url, text, tgt, None if tgt else gl))
+    if need:
+        print(f'선택 필요 {len(need)}건: {W}/attach.tsv에 아래 줄을 채워 넣고(? 자리에 L번호 또는 new) 다시 실행. 아무것도 쓰지 않음')
+        for x in need: print('  ' + x)
+        sys.exit(3)
+    for i, code, url, text, tgt, gl in todo:
+        item = f'제{iss:03d}호 ' + (f'{url} {text[:60]}' if url else text)
+        if tgt is None:
+            lid = f'L{nxt}'; nxt += 1
+            L[lid] = [[lid, '관찰', gl[0], gl[1], code, '1'], item, [f'관찰 지표: {code}', str(nmet)]]
+            log.append(f'{i} {code} → 새 교훈 {lid}({gl[0]}·{gl[1]})'); continue
+        h, ev, tail = L[tgt]
+        segs = [x for x in ev.split('; ') if x]
+        same = (url and url in ev) or (not url and any(x.startswith(f'제{iss:03d}호') and 'http' not in x for x in segs))
+        if h[1].startswith('거절(메모 없음)'):
+            mm = re.search(r'거절 제(\d+)호', tail[0])
+            if same or not url:
+                k = pubn(int(mm.group(1))) if mm else 0
+                if k >= 10 and '재상정' not in ev:
+                    h[1], h[5] = '관찰', '1'; L[tgt][1] = f'{item} (재상정: 거절 뒤 {k}회차 재발)' + ('; ' + ev if ev else '')
+                    log.append(f'{i} {code} → {tgt} 재상정(거절 뒤 {k}회차 재발)')
+                else: log.append(f'{i} {code} → {tgt} 메모 없는 거절과 같은 근거라 버림')
+                continue
+            h[1], h[5] = '관찰', '1'; L[tgt][1] = item + ('; ' + ev if ev else '')
+            log.append(f'{i} {code} → {tgt} 근거가 다른 신호라 관찰로 되살림(1회)'); continue
+        if same: log.append(f'{i} {code} → {tgt} 이미 센 근거라 버림'); continue
+        n = int(re.search(r'\d+', h[5]).group()) if re.search(r'\d+', h[5]) else 0
+        h[5] = str(n + 1)
+        nev = item + ('; ' + ev if ev else '')
+        if len(nev) > EV_MAX: nev = nev[:nev.rfind('; ', 0, EV_MAX)] + '; 이전 근거 생략'
+        L[tgt][1] = nev
+        log.append(f'{i} {code} → {tgt} 관찰 {n}→{n + 1}')
+    out = [' | '.join(h + [ev] + tail) for _, (h, ev, tail) in sorted(L.items(), key=lambda r: int(r[0][1:]))]
+    open(f'{W}/lessons.md', 'w', encoding='utf-8').write('\n'.join(out) + '\n')
+    print(f'신호 {len(sig)}줄 → 교훈 갱신 ({W}/lessons.md, 다음은 promote)')
+    for x in log: print('  ' + x)
 
 
 def reapply_assets():
