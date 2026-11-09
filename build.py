@@ -35,6 +35,7 @@
   python3 build.py probe           이번 회차 놓침 탐지 검색어 4개(rules.md 9절에서 metrics.md 회차 수로 순환, 검색어 언어로 연월을 붙임)
   python3 build.py board FILE [nodeliver]   briefing.json → 피드백 보드 db 쓰기 목록(/tmp/ev/board.json). 전달 실패면 nodeliver(항목 제외)
   python3 build.py batchcheck DIR ID [EFFECT] [TITLE]   채팅 반영 전 묶음 금지 검사(effect 지표가 겹치는 변경이 반영 뒤 발행 BATCH_WIN회차 안이면 종료 1)
+  python3 build.py audit check AUDIT.json ITEMS_DIR | board AUDIT.json WEEK | score DIR   주간 놓침 감사(독립 탐색 목록 ↔ 장부·보드 수록 대조, 보드 audit 쓰기, 주별 놓침률)
   python3 build.py guard OLD NEW   rules.md 고정 줄(사업 맥락·금지 항목·예산·금지 출처)이 바뀌었으면 종료 1
   python3 build.py feedback DIR SINCE   보드에서 받은 문서(DIR/<컬렉션>/<id>.json) → 신호(signals.md)·놓침 제보(missed.txt)·정답(gold.txt). 결정은 decide만 다룸
   python3 build.py trace CODE URL[|제목] ...   URL(못 찾으면 제목)이 수집·후보·장부·이월 어디서 빠졌는지 원인 코드 부여, signals.md에 추가
@@ -1388,6 +1389,13 @@ def feedback(d, since):
         if (m.get('at') or '') <= since or not m.get('url'): continue
         miss.append(f"{m['url'].strip()} | {(m.get('note') or '').strip()[:80]}")
         gold.append(f"{last} | {uhash(m['url'])} | {m['url'].strip()} | 수록 | {(m.get('note') or '').strip()[:80]}")
+    aud = {o['_id']: o for o in doc_rows(d, 'audit')}  # 주간 놓침 감사(독립 탐색) 가운데 사용자가 '실렸어야 함'으로 확인한 것 = 사용자 놓침 신호
+    for f in doc_rows(d, 'audit_fb'):
+        a = aud.get(f['_id'])
+        if (f.get('at') or '') <= since or f.get('verdict') != 'miss' or not a or not a.get('url'): continue
+        why = ('감사 놓침 확인: ' + ((f.get('note') or '').strip() or (a.get('why') or '').strip()))[:80]
+        miss.append(f"{a['url'].strip()} | {why}")
+        gold.append(f"{last} | {uhash(a['url'])} | {a['url'].strip()} | 수록 | {why}")
     props = {p['_id']: p for p in doc_rows(d, 'proposals')}
     orphan = [f"{x['_id']} | {x.get('decision')} | 개선안 문서 없음" for x in doc_rows(d, 'decisions')
               if x['_id'] not in props and (x.get('at') or '') > since]  # 결정 처리는 decide가 맡음
@@ -1395,10 +1403,73 @@ def feedback(d, since):
     open(f'{W}/gold.txt', 'w').write('\n'.join(gold) + ('\n' if gold else ''))
     open(f'{W}/missed.txt', 'w').write('\n'.join(miss) + ('\n' if miss else ''))
     json.dump(cnt, open(f'{W}/fb_count.json', 'w'))
-    latest = max([o.get('at') or '' for c in ('feedback', 'missed', 'decisions') for o in doc_rows(d, c)] + [since])
+    latest = max([o.get('at') or '' for c in ('feedback', 'missed', 'decisions', 'audit_fb') for o in doc_rows(d, c)] + [since])
     print(f"신호 {len(sig)}줄 → {W}/signals.md\n놓침 제보 {len(miss)}건 → {W}/missed.txt (trace MISS-U로 원인 확인)\n정답 {len(gold)}줄 → {W}/gold.txt\n"
           f"평가 {cnt['평가']}건 중 유용 {cnt['유용']}건\nfb_seen 다음 값: {latest}")
     for l in orphan: print('  대응 개선안 없는 결정(오류에 적음): ' + l)
+
+
+AUDIT_FIELDS = ('url', 'title', 'date', 'topic', 'why')
+
+
+def audit_cmd(sub, a):
+    """주간 놓침 감사. check AUDIT.json ITEMS_DIR: 장부·보드 items와 URL로 자동 대조(audit_auto.json), 못 맞춘 것과 기간 안 수록 기사 목록 출력.
+    board AUDIT.json WEEK: match를 채운 목록 → 보드 audit 쓰기(audit_board.json). score DIR: 보드 audit·audit_fb → 주별 놓침률."""
+    if sub == 'score':
+        aud, fb = doc_rows(a[0], 'audit'), {f['_id']: f for f in doc_rows(a[0], 'audit_fb')}
+        weeks = {}
+        for o in aud:
+            w = weeks.setdefault(o.get('week') or '?', {'후보': 0, '실림': 0, '놓침': 0, '불필요': 0, '대기': 0})
+            w['후보'] += 1
+            v = (fb.get(o['_id']) or {}).get('verdict')
+            if o.get('carried'): w['실림'] += 1
+            elif v == 'miss': w['놓침'] += 1
+            elif v == 'ok': w['불필요'] += 1
+            else: w['대기'] += 1
+        rate = lambda w: f"{100 * w['놓침'] / (w['실림'] + w['놓침']):.0f}%" if w['실림'] + w['놓침'] else '-'
+        for k in sorted(weeks): print(f"{k} | 후보 {weeks[k]['후보']} 실림 {weeks[k]['실림']} 놓침 {weeks[k]['놓침']} 불필요 {weeks[k]['불필요']} 판정 대기 {weeks[k]['대기']} | 놓침률 {rate(weeks[k])}")
+        last4 = [weeks[k] for k in sorted(weeks)[-4:]]
+        tot = {x: sum(w[x] for w in last4) for x in ('실림', '놓침', '대기')}
+        print(f"최근 {len(last4)}주 놓침률 {rate(tot)} (놓침 ÷ (실림 + 놓침), 판정 대기 {tot['대기']}건 제외)")
+        return
+    src = json.load(open(a[0], encoding='utf-8'))
+    if not isinstance(src, list) or any(not isinstance(x, dict) or any(not str(x.get(k) or '').strip() for k in AUDIT_FIELDS) for x in src):
+        sys.exit(f'형식 오류: [{{{", ".join(AUDIT_FIELDS)}}}, ...] 목록이어야 하고 칸이 비면 안 됨')
+    if sub == 'check':
+        sent = read_sent(); sent = sent if isinstance(sent, list) else []
+        lh = {h for r in sent for h in [r['url'] if r['url'].startswith('u:') else uhash(r['url'])] + r['alt']}
+        items = doc_rows(a[1], 'items') if len(a) > 1 else []
+        ih = {o.get('key') or uhash(o.get('url') or ''): o['_id'] for o in items}
+        auto, out = {}, []
+        for x in src:
+            h = uhash(x['url'])
+            auto[x['url']] = ('item:' + ih[h]) if h in ih else 'ledger' if h in lh else ''
+            out.append(f"{'자동 일치 ' + auto[x['url']] if auto[x['url']] else '대조 필요'} | {x['date']} | {x['title'][:60]} | {x['url']}")
+        json.dump(auto, open(f'{W}/audit_auto.json', 'w'), ensure_ascii=False)
+        lo = min(x['date'] for x in src)
+        print('\n'.join(out))
+        print(f"\n같은 사건 대조용 보드 수록 기사({lo} 이후 회차, id | 호 | 제목 | URL). 대조 필요 항목의 match에 같은 사건의 id를, 없으면 none을 적음:")
+        for o in sorted(items, key=lambda o: (o.get('issue') or 0, o.get('n') or 0)):
+            if (o.get('date') or '') >= lo: print(f"  {o['_id']} | 제{o.get('issue', 0):03d}호 | {o.get('headline', '')[:60]} | {o.get('url', '')}")
+        return
+    if sub == 'board':
+        week = a[1]
+        if not re.fullmatch(r'\d{4}-\d\d-\d\d', week): sys.exit('WEEK는 감사 기간 끝 날짜(YYYY-MM-DD)')
+        auto = json.load(open(f'{W}/audit_auto.json', encoding='utf-8')) if os.path.exists(f'{W}/audit_auto.json') else {}
+        writes, bad = [], []
+        for x in src:
+            m = auto.get(x['url']) or str(x.get('match') or '').strip()
+            if not re.fullmatch(r'item:i\d{3}-\d{2}|i\d{3}-\d{2}|ledger|none', m): bad.append(x['url']); continue
+            m = 'item:' + m if m.startswith('i') else m
+            writes.append({'op': 'set', 'collection': 'audit', 'doc_id': 'a' + hashlib.sha1((week + nurl(x['url'])).encode()).hexdigest()[:12],
+                           'data': {**{k: str(x[k]).strip()[:300] for k in AUDIT_FIELDS}, 'week': week, 'match': m, 'carried': m != 'none',
+                                    'at': dt.datetime.now(dt.timezone.utc).isoformat()[:19] + 'Z'}})
+        if bad: sys.exit('match 없음(자동 일치가 아니면 보드 items id나 none을 적음): ' + ', '.join(bad))
+        json.dump(writes, open(f'{W}/audit_board.json', 'w'), ensure_ascii=False)
+        n = sum(1 for w in writes if not w['data']['carried'])
+        print(f"{W}/audit_board.json ({len(writes)}건: 실림 {len(writes) - n} · 판정 필요 {n}) → ArtifactData batch(50건씩)")
+        return
+    sys.exit('사용법: build.py audit check AUDIT.json ITEMS_DIR | board AUDIT.json WEEK | score DIR')
 
 
 def cand_bands():
@@ -2344,6 +2415,7 @@ if __name__ == '__main__':
     elif a[0] == 'coverage': coverage()
     elif a[0] == 'snapshot': snapshot(a[1])
     elif a[0] == 'cases': cases(a[1], a[2], a[3])
+    elif a[0] == 'audit': audit_cmd(a[1], a[2:])
     elif a[0] == 'batchcheck': batchcheck(a[1], a[2], a[3] if len(a) > 3 else None, a[4] if len(a) > 4 else None)
     elif a[0] == 'selftest': sys.exit(0 if selftest() else 1)
     else: sys.exit(__doc__)
