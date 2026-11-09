@@ -1390,12 +1390,14 @@ def feedback(d, since):
         miss.append(f"{m['url'].strip()} | {(m.get('note') or '').strip()[:80]}")
         gold.append(f"{last} | {uhash(m['url'])} | {m['url'].strip()} | 수록 | {(m.get('note') or '').strip()[:80]}")
     aud = {o['_id']: o for o in doc_rows(d, 'audit')}  # 주간 놓침 감사(독립 탐색) 가운데 사용자가 '실렸어야 함'으로 확인한 것 = 사용자 놓침 신호
+    runs = sorted({(o.get('date') or '', o.get('issue') or 0) for o in items.values() if o.get('date')})  # (회차 날짜 KST, 호)
+    due = lambda day: next((i for dd, i in runs if dd > (day or '')), last)  # 기사 공개일 뒤 첫 회차 = 실렸어야 할 호(평가 세트 스냅샷)
     for f in doc_rows(d, 'audit_fb'):
         a = aud.get(f['_id'])
         if (f.get('at') or '') <= since or f.get('verdict') != 'miss' or not a or not a.get('url'): continue
         why = ('감사 놓침 확인: ' + ((f.get('note') or '').strip() or (a.get('why') or '').strip()))[:80]
         miss.append(f"{a['url'].strip()} | {why}")
-        gold.append(f"{last} | {uhash(a['url'])} | {a['url'].strip()} | 수록 | {why}")
+        gold.append(f"{due(a.get('date'))} | {uhash(a['url'])} | {a['url'].strip()} | 수록 | {why}")
     props = {p['_id']: p for p in doc_rows(d, 'proposals')}
     orphan = [f"{x['_id']} | {x.get('decision')} | 개선안 문서 없음" for x in doc_rows(d, 'decisions')
               if x['_id'] not in props and (x.get('at') or '') > since]  # 결정 처리는 decide가 맡음
@@ -1431,6 +1433,7 @@ def audit_cmd(sub, a):
         last4 = [weeks[k] for k in sorted(weeks)[-4:]]
         tot = {x: sum(w[x] for w in last4) for x in ('실림', '놓침', '대기')}
         print(f"최근 {len(last4)}주 놓침률 {rate(tot)} (놓침 ÷ (실림 + 놓침), 판정 대기 {tot['대기']}건 제외)")
+        if tot['놓침']: print(f"놓침 확인 {tot['놓침']}건: 채팅에서 '평가 세트 갱신'으로 필수 문항을 만듦(보드 스냅샷은 약 4주 뒤 덮어씀)")
         return
     src = json.load(open(a[0], encoding='utf-8'))
     if not isinstance(src, list) or any(not isinstance(x, dict) or any(not str(x.get(k) or '').strip() for k in AUDIT_FIELDS) for x in src):
@@ -1799,16 +1802,20 @@ def cases(snapdir, gold, out):
     name = os.path.basename(snapdir.rstrip('/'))
     m = re.search(r'(\d+)$', name); iss = m.group(1).lstrip('0') if m else None
     cs = []
+    cand = open(f'{snapdir}/candidates.md', encoding='utf-8').read() if os.path.exists(f'{snapdir}/candidates.md') else ''
     for ln in open(gold, encoding='utf-8'):
         p = [x.strip() for x in ln.split('|')]
         if len(p) < 5 or (iss and p[0] not in (iss, '-')): continue
         u = re.sub(r'^https?://(www\.|m\.)?', '', p[2]).rstrip('/')
         exp = {'decision_in': ['핵심', '참고']} if p[3] == '수록' else {'decision': p[3]}
-        cs.append({'id': f'G{len(cs) + 1:02d}', 'layer': 'judge', 'status': 'reviewed', 'source': 'feedback',
-                   'match': u[:120], 'expect': exp, 'reason': p[4] or '사용자 보드 평가'})
+        c = {'id': f'G{len(cs) + 1:02d}', 'layer': 'judge', 'status': 'reviewed', 'source': 'feedback',
+             'match': u[:120], 'expect': exp, 'reason': p[4] or '사용자 보드 평가'}
+        if p[4].startswith('감사 놓침 확인'):  # 사용자가 확인한 놓침: 판정 규칙이 반드시 실어야 하는 문항(must). 후보에 없으면 수집 공백이라 판정 게이트에서 뺌
+            c.update({'source': 'audit', 'must': True} if u[:120] in cand else {'source': 'audit', 'known_gap': True, 'type': '수집 공백'})
+        cs.append(c)
     json.dump({'snapshot': name, 'note': f'피드백 보드 평가로 만든 판정 문항({name})', 'cases': cs},
               open(out, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
-    print(f'{out}: 판정 문항 {len(cs)}개')
+    print(f"{out}: 판정 문항 {len(cs)}개(필수 {sum(1 for c in cs if c.get('must'))}, 수집 공백 {sum(1 for c in cs if c.get('known_gap'))})")
 
 
 LOCK = [r'^## 0\.', r'^B\.once는', r'쓰지 않습니다:', r'출처로 쓰지 않는 곳', r'최대 25회', r'최대 15회', r'40회 이하', r'개선 단계 웹 호출',

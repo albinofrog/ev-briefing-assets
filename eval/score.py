@@ -4,10 +4,12 @@
   python3 eval/score.py                       # prep 단계 문항 채점(현재 저장소의 build.py)
   python3 eval/score.py --build 경로/build.py  # 다른 버전의 build.py로 채점(수정 전후 비교)
   python3 eval/score.py --briefing 경로/briefing.json  # 판정 문항도 채점(스냅샷으로 돌린 회차의 결과)
+  python3 eval/score.py --briefing a.json --briefing b.json  # 같은 규칙으로 여러 번 돌린 결과: 문항마다 과반 통과로 판정
 
 스냅샷(eval/snapshot-*)의 수집 데이터·장부·기준 시각을 고정해 prep을 돌리므로 언제 실행해도 같은 후보 목록이 나옵니다.
 작업 폴더로 /tmp/ev를 비우고 쓰므로 실제 회차와 같은 환경에서 동시에 돌리지 않습니다.
-종료 코드: 일반 prep 문항(known_gap 제외)이 하나라도 틀리면 1(회귀).
+종료 코드: 일반 prep 문항(known_gap 제외)이 하나라도 틀리면 1(회귀). 그다음 필수 판정 문항(must, 사용자가 확인한 놓침)이 과반 실행에서
+틀리면 2(판정 규칙 게이트 거부, chat_ops.md 1번).
 """
 import sys, os, re, json, shutil, argparse, importlib.util, contextlib, io, datetime as dt
 
@@ -71,7 +73,7 @@ def full_url(text, match):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--build', default=os.path.join(REPO, 'build.py'))
-    ap.add_argument('--briefing')
+    ap.add_argument('--briefing', action='append', help='여러 번 주면 문항마다 과반 실행 통과로 판정')
     ap.add_argument('--cases', default=os.path.join(HERE, 'cases.json'))
     ap.add_argument('--prep-only', action='store_true', help='스냅샷으로 prep만 돌려 /tmp/ev를 재현 실행용으로 준비하고 끝냄(eval/replay.md)')
     a = ap.parse_args()
@@ -86,6 +88,26 @@ def main():
     groups = parse_candidates(f'{W}/candidates.md')
     meta = json.load(open(f'{W}/cand_meta.json'))
     find = lambda m: next((g for g in groups if any(m in l for l in g['lines'])), None)
+
+    runs = [json.load(open(x, encoding='utf-8')) for x in (a.briefing or [])]
+
+    def judge_one(c, g, e, d):
+        url = full_url('\n'.join(g['lines']), c['match']) if g else None
+        grp = set(meta.get(b.uhash(url), {}).get('grp', [])) if url else set()
+        for m in c.get('also', []):  # 같은 사건이 prep에서 다른 묶음으로 나뉜 경우
+            ga = find(m)
+            ua = full_url('\n'.join(ga['lines']), m) if ga else None
+            if ua: grp |= set(meta.get(b.uhash(ua), {}).get('grp', []))
+        hit = next((i for i in d['items'] if b.uhash(i['url']) in grp
+                    or (i.get('origin') and i['origin'].get('url') and b.uhash(i['origin']['url']) in grp)
+                    or any(h in i['url'] for h in c.get('accept_hosts', []))), None)
+        got = {'decision': {'core': '핵심', 'ref': '참고'}[hit['tier']] if hit else '제외'}
+        if hit:
+            got['relevance'] = hit.get('relevance'); got['trust_fail'] = hit.get('trust_fail')
+        bad = [f'{k} 기대 {v} / 결과 {got.get(k)}' for k, v in e.items() if k != 'decision_in' and got.get(k) != v]
+        if 'decision_in' in e and got['decision'] not in e['decision_in']:
+            bad.append(f"decision 기대 {'·'.join(e['decision_in'])} / 결과 {got['decision']}")
+        return not bad, '; '.join(bad) or got['decision']
 
     res = []
     for c in spec['cases']:
@@ -103,36 +125,28 @@ def main():
             else:
                 ok, why = g['band'] >= e['band_min'], f"점수 구간 {g['band']}"
         else:
-            if not a.briefing:
+            if not runs:
                 continue
-            d = json.load(open(a.briefing, encoding='utf-8'))
-            url = full_url('\n'.join(g['lines']), c['match']) if g else None
-            grp = set(meta.get(b.uhash(url), {}).get('grp', [])) if url else set()
-            for m in c.get('also', []):  # 같은 사건이 prep에서 다른 묶음으로 나뉜 경우
-                ga = find(m)
-                ua = full_url('\n'.join(ga['lines']), m) if ga else None
-                if ua: grp |= set(meta.get(b.uhash(ua), {}).get('grp', []))
-            hit = next((i for i in d['items'] if b.uhash(i['url']) in grp
-                        or (i.get('origin') and i['origin'].get('url') and b.uhash(i['origin']['url']) in grp)
-                        or any(h in i['url'] for h in c.get('accept_hosts', []))), None)
-            got = {'decision': {'core': '핵심', 'ref': '참고'}[hit['tier']] if hit else '제외'}
-            if hit:
-                got['relevance'] = hit.get('relevance'); got['trust_fail'] = hit.get('trust_fail')
-            bad = [f'{k} 기대 {v} / 결과 {got.get(k)}' for k, v in e.items() if k != 'decision_in' and got.get(k) != v]
-            if 'decision_in' in e and got['decision'] not in e['decision_in']:
-                bad.append(f"decision 기대 {'·'.join(e['decision_in'])} / 결과 {got['decision']}")
-            ok, why = not bad, '; '.join(bad) or got['decision']
+            rs = [judge_one(c, g, e, d) for d in runs]
+            npass = sum(o for o, _ in rs)
+            ok = npass * 2 > len(rs)  # 과반 통과
+            why = rs[0][1] if len(rs) == 1 else f"{npass}/{len(rs)}회 통과 | " + ' / '.join(w for _, w in rs)
         res.append((c, ok, why))
 
     for c, ok, why in res:
-        flag = ' (알려진 공백)' if c.get('known_gap') else ''
+        flag = ' (알려진 공백)' if c.get('known_gap') else ' (필수)' if c.get('must') else ''
         print(f"{'PASS' if ok else 'FAIL'} {c['id']} {c.get('type', c['layer'])}{flag} | {why}")
     reg = [(c, ok) for c, ok, _ in res if c['layer'] == 'prep' and not c.get('known_gap')]
     gap = [(c, ok) for c, ok, _ in res if c['layer'] == 'prep' and c.get('known_gap')]
-    jud = [(c, ok) for c, ok, _ in res if c['layer'] == 'judge']
+    jud = [(c, ok) for c, ok, _ in res if c['layer'] == 'judge' and not c.get('known_gap')]
+    must = [(c, ok) for c, ok in jud if c.get('must')]
     print(f"\nprep 회귀 {sum(o for _, o in reg)}/{len(reg)} · 알려진 공백 해결 {sum(o for _, o in gap)}/{len(gap)}"
-          + (f" · 판정 {sum(o for _, o in jud)}/{len(jud)}" if jud else ' · 판정 문항은 --briefing 필요'))
-    sys.exit(0 if all(o for _, o in reg) else 1)
+          + (f" · 판정 {sum(o for _, o in jud)}/{len(jud)}" + (f"({len(runs)}회 과반)" if len(runs) > 1 else '')
+             + (f" · 필수 {sum(o for _, o in must)}/{len(must)}" if must else '') if runs else ' · 판정 문항은 --briefing 필요'))
+    if not all(o for _, o in reg): sys.exit(1)
+    if not all(o for _, o in must):
+        print('필수 문항 실패: ' + ', '.join(c['id'] for c, o in must if not o) + ' (판정 규칙 게이트 거부)'); sys.exit(2)
+    sys.exit(0)
 
 
 if __name__ == '__main__':

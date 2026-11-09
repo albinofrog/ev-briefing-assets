@@ -8,9 +8,10 @@
   - `prep`: 후보 목록의 표시·점수 구간 문항. 자동 채점.
   - `judge`: 수록 여부(제외·참고·핵심)·관련도 문항. 스냅샷으로 돌린 회차의 briefing.json이 있어야 채점.
   - `known_gap`: 아직 해결 못 한 알려진 공백. 회귀 판정에서 빠지고, 해결 수를 따로 셉니다.
+  - `must`: 사용자가 확인한 놓침(주간 놓침 감사)으로 만든 판정 문항. 여러 실행 과반에서 틀리면 score.py 종료 2(판정 규칙 개정 거부).
   - `status`: `draft`는 사용자 검토 전, `reviewed`는 검토를 마친 정답.
 - `score.py`: 채점기. `replay.md`: 판정 문항용 재현 실행 절차. `results/`: 재현 결과와 점수 기록.
-- `test_patch.py`: 승인 개선안 적용(decide·patch·재적용) 검사(네트워크 필요). `test_review.py`: 검수 반영분(재적용·장부·승격 판정·early_public·trace C9 등) 검사. `test_audit.py`: 주간 놓침 감사(audit)와 감사 판정의 놓침 신호 연결 검사. build.py를 고치면 셋 다 종료 0이어야 합니다(chat_ops.md).
+- `test_patch.py`: 승인 개선안 적용(decide·patch·재적용) 검사(네트워크 필요). `test_review.py`: 검수 반영분(재적용·장부·승격 판정·early_public·trace C9 등) 검사. `test_audit.py`: 주간 놓침 감사(audit), 감사 판정의 놓침 신호 연결, 필수 문항(감사에서 확인한 놓침, `must`) 생성과 score.py 게이트(종료 2) 검사. build.py를 고치면 셋 다 종료 0이어야 합니다(chat_ops.md).
 
 ```
 python3 eval/score.py                         # 현재 build.py

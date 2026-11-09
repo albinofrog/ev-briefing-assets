@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""주간 놓침 감사(build.py audit)와 감사 판정의 개선 신호 연결(build.py feedback) 검사. 네트워크 없음.
+"""주간 놓침 감사(build.py audit)·감사 판정의 개선 신호 연결(feedback)·필수 문항(cases·score.py) 검사. 네트워크 없음.
 
-  python3 eval/test_audit.py
+  python3 eval/test_audit.py      (score.py 필수 문항 검사에 기본 스냅샷 prep을 씀)
 """
 import os, sys, json, shutil, subprocess
 
@@ -74,6 +74,43 @@ check('feedback: 이미 본 감사 판정은 다시 안 셈', U4 not in open(f'{
 doc('audit_fb', by[U3]['doc_id'], {'verdict': 'ok', 'note': '', 'at': '2026-11-15T00:00:00Z'})
 code, out = run('feedback', f'{T}/fb', '2026-11-14T01:00:00Z')
 check('feedback: 불필요 판정은 놓침 신호 아님', open(f'{T}/missed.txt', encoding='utf-8').read() == '', out)
+
+# 감사 놓침 → 정답 줄의 호는 기사 공개일 뒤 첫 회차(그 회차 스냅샷이 평가 세트가 됨)
+doc('items', 'i035-01', {'issue': 35, 'n': 1, 'tier': 'ref', 'url': 'https://z.example/1', 'headline': 'z', 'date': '2026-11-12'})
+code, out = run('feedback', f'{T}/fb', '2026-11-13T00:00:00Z')
+g = [l for l in open(f'{T}/gold.txt', encoding='utf-8').read().splitlines() if U4 in l]
+check('feedback: 감사 놓침 정답 줄은 공개일(11-11) 뒤 첫 회차 제035호', g and g[0].startswith('35 | '), str(g) + out)
+
+# cases: 감사 놓침은 스냅샷 후보에 있으면 필수(must) 판정 문항, 없으면 수집 공백(known_gap, 게이트 제외)
+S = f'{T}/snapshot-x-035'; os.makedirs(S)
+open(f'{S}/candidates.md', 'w', encoding='utf-8').write(f'c1 | 3 | 제목 | {U4}\n')
+open(f'{T}/gold_c.txt', 'w', encoding='utf-8').write(
+    f'35 | k | {U4} | 수록 | 감사 놓침 확인: 배터리 보험\n35 | k2 | https://example.kr/not-collected | 수록 | 감사 놓침 확인: 미수집\n35 | k3 | https://example.com/u | 제외 | 사용자 평가\n')
+code, out = run('cases', S, f'{T}/gold_c.txt', f'{T}/cases_035.json')
+cs = json.load(open(f'{T}/cases_035.json', encoding='utf-8'))['cases'] if code == 0 else []
+check('cases: 후보에 있는 감사 놓침은 필수 문항', len(cs) == 3 and cs[0].get('must') is True and not cs[0].get('known_gap'), out + json.dumps(cs, ensure_ascii=False))
+check('cases: 후보에 없는 감사 놓침은 수집 공백(게이트 제외)', len(cs) == 3 and cs[1].get('known_gap') is True and not cs[1].get('must'), json.dumps(cs, ensure_ascii=False))
+check('cases: 일반 평가 문항은 그대로', len(cs) == 3 and not cs[2].get('must') and not cs[2].get('known_gap') and cs[2]['expect'] == {'decision': '제외'})
+
+# score.py: 필수 문항이 과반 실행에서 틀리면 종료 2, 과반 통과면 0
+SNAP = 'snapshot-20261001'
+cand = subprocess.run([sys.executable, f'{REPO}/eval/score.py', '--prep-only'], capture_output=True, text=True, env={**os.environ, 'EV_W': f'{T}/sp'})
+import re as _re
+u = _re.search(r'https?://\S+', open(f'{T}/sp/candidates.md', encoding='utf-8').read().split('## ')[1]).group(0) if cand.returncode == 0 else ''
+m = _re.sub(r'^https?://(www\.|m\.)?', '', u).rstrip('/')[:120]
+json.dump({'snapshot': SNAP, 'cases': [{'id': 'M01', 'layer': 'judge', 'must': True, 'match': m, 'expect': {'decision_in': ['핵심', '참고']}}]},
+          open(f'{T}/cases_must.json', 'w', encoding='utf-8'), ensure_ascii=False)
+item = {'tier': 'ref', 'url': u, 'relevance': 1}
+for name, items in (('hit', [item]), ('miss', [])):
+    json.dump({'items': items}, open(f'{T}/br_{name}.json', 'w', encoding='utf-8'))
+sc = lambda *bs: subprocess.run([sys.executable, f'{REPO}/eval/score.py', '--cases', f'{T}/cases_must.json'] + [x for b_ in bs for x in ('--briefing', f'{T}/br_{b_}.json')],
+                                capture_output=True, text=True, env={**os.environ, 'EV_W': f'{T}/sp'})
+r1, r2, r3 = sc('hit'), sc('miss'), sc('hit', 'miss', 'miss')
+check('score.py: 필수 문항 통과 종료 0', bool(u) and r1.returncode == 0 and '필수 1/1' in r1.stdout, r1.stdout + r1.stderr)
+check('score.py: 필수 문항 실패 종료 2', r2.returncode == 2 and '필수 문항 실패: M01' in r2.stdout, r2.stdout + r2.stderr)
+check('score.py: 여러 실행은 과반으로(1/3 통과면 실패)', r3.returncode == 2 and '1/3회 통과' in r3.stdout, r3.stdout + r3.stderr)
+r4 = sc('hit', 'hit', 'miss')
+check('score.py: 2/3 통과면 통과', r4.returncode == 0 and '(3회 과반)' in r4.stdout, r4.stdout + r4.stderr)
 
 print(f'\n{"전부 통과" if not fails else "실패 " + ", ".join(fails)}')
 sys.exit(1 if fails else 0)

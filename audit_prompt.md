@@ -27,5 +27,5 @@
 
 ## 4. 알림과 마무리
 - 보드 `audit`과 `audit_fb`를 `list`(limit 1000, out_dir `/tmp/ev/fba`)로 받고 `python3 /tmp/ev/build.py audit score /tmp/ev/fba`를 실행합니다.
-- PushNotification: `EV 브리핑 놓침 감사 | <기간 시작>~<WEEK> | 후보 N · 실림 a · 판정 필요 b | 최근 4주 놓침률 <score 출력> | 보드 <board URL>`. 판정 필요가 1 이상이면 끝에 ` | 보드에서 '실렸어야 함/없어도 됨' 선택`을 붙입니다.
+- PushNotification: `EV 브리핑 놓침 감사 | <기간 시작>~<WEEK> | 후보 N · 실림 a · 판정 필요 b | 최근 4주 놓침률 <score 출력> | 보드 <board URL>`. 판정 필요가 1 이상이면 끝에 ` | 보드에서 '실렸어야 함/없어도 됨' 선택`을, score 출력에 `놓침 확인` 줄이 있으면 ` | 채팅에서 "평가 세트 갱신" 요청(스냅샷 약 4주 보관)`을 붙입니다.
 - 마지막 메시지에는 푸시 문구, 검색한 칸과 검색 횟수, 고른 기사와 대조 결과(자동 일치·수동 대조·none), score 출력, 오류를 남깁니다. 어떤 단계가 실패해도 사유를 남기고 푸시를 보냅니다.
