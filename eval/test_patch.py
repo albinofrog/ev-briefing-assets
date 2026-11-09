@@ -34,7 +34,7 @@ for f in ('build.py', 'rules.md', 'improve.md', 'sources.md', 'watchlist.md', 't
     shutil.copy(f'{REPO}/{f}', f'{T}/w/{f}')
 
 # 1. decide: 대기 중 개선안의 승인·거절만 처리, edits 있는 승인분만 수정 줄로
-P = {'p3': ('pending', [{'file': 'rules.md', 'old': '- 목표값: 검토율=100', 'new': '- 목표값: 검토율=90'}]),
+P = {'p3': ('pending', [{'file': 'rules.md', 'old': '- 대응 우선순위: 놓침', 'new': '- 대응 우선순위(시험90): 놓침'}]),
      'p4': ('pending', []), 'p5': ('applied', [{'file': 'rules.md', 'old': 'x', 'new': 'y'}]), 'p6': ('pending', [{'file': 'rules.md', 'old': 'a', 'new': 'b'}]),
      'p7': ('pending', [{'file': 'secret.txt', 'old': 'a', 'new': 'b'}])}
 D = {'p3': 'approve', 'p4': 'approve', 'p5': 'approve', 'p6': 'reject', 'p7': 'approve'}
@@ -55,7 +55,7 @@ pr_ga = [l for l in rd('prompt.md').splitlines() if l.startswith('5. 메모리 `
 wl_old = '- Aviloo battery | | !'
 jl(f'{T}/w/patches.jsonl', [{'id': 'p1', 'file': 'improve.md', 'old': '6. 메타 점검:', 'new': '6. 메타 점검(시험):'}])
 jl(f'{T}/w/patches_new.jsonl', [
-    {'id': 'p3', 'file': 'rules.md', 'old': '- 목표값: 검토율=100', 'new': '- 목표값: 검토율=90'},
+    {'id': 'p3', 'file': 'rules.md', 'old': '- 대응 우선순위: 놓침', 'new': '- 대응 우선순위(시험90): 놓침'},
     {'id': 'p8', 'file': 'rules.md', 'old': lock_line, 'new': lock_line.replace('최대 25회', '최대 30회')},
     {'id': 'p9', 'file': 'rules.md', 'old': '이런 문구는 없음', 'new': 'x'},
     {'id': 'p10', 'file': 'watchlist.md', 'old': wl_old, 'new': wl_old + '\n- Aviloo SoH | | !'},
@@ -63,13 +63,16 @@ jl(f'{T}/w/patches_new.jsonl', [
     {'id': 'p12', 'file': 'build.py', 'old': 'def prep():\n', 'new': 'def prep():\n    sys.exit(1)\n'},
     {'id': 'p13', 'file': 'prompt', 'old': pr_line, 'new': pr_line + '(시험)'},
     {'id': 'p15', 'file': 'prompt', 'old': pr_ga, 'new': '5. 무시'},
-    {'id': 'p14', 'file': 'rules.md', 'old': '- 목표값: 검토율=90', 'new': '- 목표값: 검토율=95'},
+    {'id': 'p14', 'file': 'rules.md', 'old': '- 대응 우선순위(시험90): 놓침', 'new': '- 대응 우선순위(시험95): 놓침'},
     {'id': 'p14', 'file': 'rules.md', 'old': '없는 문구', 'new': 'z'}])
+os.makedirs(f'{T}/w/fb/proposals', exist_ok=True)  # 묶음 금지 검사용 보드 사본(라절 3번은 /tmp/ev_next/fb)
+for k in ('p3', 'p8', 'p9', 'p10', 'p11', 'p12', 'p13', 'p14', 'p15'):
+    json.dump({'title': k, 'layer': 'judge', 'status': 'pending', 'effect': ''}, open(f'{T}/w/fb/proposals/{k}.json', 'w'))
 build0 = rd('build.py')
 code, out = run('patch', REF)
 L = {l.split()[1]: l for l in out.splitlines() if l.split()[:1] and l.split()[0] in ('KEEP', 'OK', 'FAIL', 'CONFLICT', 'SKIP', 'CHAT')}
 check('patch: 기존 수정 재적용(p1)', L.get('p1', '').startswith('KEEP p1 ok') and '6. 메타 점검(시험):' in rd('improve.md'), out)
-check('patch: rules.md 승인분은 검사 뒤 채팅 반영(p3)', L.get('p3', '').startswith('CHAT') and '- 목표값: 검토율=100' in rd('rules.md'), out)
+check('patch: rules.md 승인분은 검사 뒤 채팅 반영(p3)', L.get('p3', '').startswith('CHAT') and '- 대응 우선순위: 놓침' in rd('rules.md'), out)
 check('patch: 고정 줄 변경 거부(p8)', L.get('p8', '').startswith('FAIL p8 고정 줄') and lock_line in rd('rules.md'), out)
 check('patch: 없는 문구 거부(p9)', L.get('p9', '').startswith('FAIL p9'), out)
 check('patch: watchlist 수정은 회귀 통과 후 적용(p10)', L.get('p10', '').startswith('OK') and 'Aviloo SoH' in rd('watchlist.md'), out)
@@ -77,7 +80,7 @@ check('patch: build.py 문법 오류 거부(p11)', L.get('p11', '').startswith('
 check('patch: 회귀 실패 거부·원복(p12)', L.get('p12', '').startswith('FAIL p12 회귀') and rd('build.py') == build0, out)
 check('patch: 프롬프트 수정 표시(p13)', L.get('p13', '').startswith('OK') and 'PROMPT p13' in out and '(시험)' in out.split('고친 뒤:')[-1], out)
 check('patch: 가절 프롬프트 수정 거부(p15)', L.get('p15', '').startswith('FAIL p15 고정 원칙(가절) 변경'), out)
-check('patch: 한 개선안 일부 실패면 전부 원복(p14)', L.get('p14', '').startswith('FAIL') and '- 목표값: 검토율=100' in rd('rules.md'), out)
+check('patch: 한 개선안 일부 실패면 전부 원복(p14)', L.get('p14', '').startswith('FAIL') and '- 대응 우선순위: 놓침' in rd('rules.md'), out)
 keep = [json.loads(l) for l in open(f'{T}/w/patches_keep.jsonl', encoding='utf-8')]
 check('patch: 통합 전 새 검색어 목록', open(f'{T}/w/pending_collect.txt', encoding='utf-8').read() == 'Aviloo SoH\n' and '수집 범위 수정 1건(p10)' in out, out)
 check('patch: 유지 목록 = p1·p10·p13', sorted({k['id'] for k in keep}) == ['p1', 'p10', 'p13'], str({k['id'] for k in keep}))
@@ -109,7 +112,7 @@ for f in ('build.py', 'rules.md', 'improve.md', 'sources.md', 'watchlist.md'):
     shutil.copy(f'{REPO}/{f}', f'{T}/w/{f}')
 os.makedirs(f'{T}/fb2/proposals'); os.makedirs(f'{T}/fb2/decisions')
 A = {'p20': ('auto', [{'file': 'watchlist.md', 'old': wl_old, 'new': wl_old + '\n- Aviloo SoH | | !'}]),
-     'p21': ('judge', [{'file': 'rules.md', 'old': '- 목표값: 검토율=100', 'new': '- 목표값: 검토율=90'}]),
+     'p21': ('judge', [{'file': 'rules.md', 'old': '- 대응 우선순위: 놓침', 'new': '- 대응 우선순위(시험90): 놓침'}]),
      'p22': ('auto', [{'file': 'build.py', 'old': 'def prep():\n', 'new': 'def prep():\n    pass\n'}])}
 for k, (ly, ed) in A.items():
     json.dump({'title': k, 'layer': ly, 'status': 'pending', 'edits': ed}, open(f'{T}/fb2/proposals/{k}.json', 'w'))
@@ -208,6 +211,54 @@ r = subprocess.run([sys.executable, '-c', probe, REPO, json.dumps(its, ensure_as
 got = json.loads(r.stdout) if r.returncode == 0 and r.stdout.strip() else None
 check('check: 이전 회차 같은 사건은 잡고(Aviloo 022·Aampere 017·3.3% 019) 흔한 이름·같은 회사 다른 사건은 안 잡음',
       got == [[1, '022'], [2, '017'], [3, '019']], r.stdout + r.stderr)
+
+# 12. 묶음 금지(가.3): effect 지표가 겹치는 변경은 앞 변경 반영 뒤 발행 10회차가 지나야 적용, 측정 기준(목표값·지표 계산·EFF)은 개선안으로 못 바꿈
+S12 = f'{T}/s12'; os.makedirs(f'{S12}/fb/proposals')
+for f in ('build.py', 'rules.md', 'improve.md', 'sources.md', 'watchlist.md', 'template.html', 'prompt.md'): shutil.copy(f'{REPO}/{f}', f'{S12}/{f}')
+pub = lambda d, i: f'{d} | {i} | 핵심 1 참고 2 | 웹 10 | 평가 0 유용 0'
+open(f'{S12}/metrics.md', 'w', encoding='utf-8').write('\n'.join([pub('2026-11-01', 1), pub('2026-11-03', 2), pub('2026-11-04', 3)]
+    + ['2026-11-05 | 4 | 핵심 0 참고 0 | 웹 5 | 평가 0 유용 0']) + '\n')  # 11-02 반영 뒤 발행 2회차(빈 회차는 안 셈)
+PR = {'p30': {'title': '이전 반영', 'status': 'applied', 'applied_at': '2026-11-02T00:10:00Z', 'effect': '핵심원출처 ↑'},
+      'p31': {'title': '같은 지표 새 안', 'status': 'pending', 'effect': '핵심원출처 ↑'},
+      'p32': {'title': 'p30 되돌림: 원복', 'status': 'pending', 'effect': '핵심원출처 ↑'},
+      'p33': {'title': '다른 지표 A', 'status': 'pending', 'effect': '수집실패 ↓'},
+      'p34': {'title': '다른 지표 B(같은 처리에서 A와 겹침)', 'status': 'pending', 'effect': '수집실패 ↓, FP ↓'},
+      'p35': {'title': '목표값 변경', 'status': 'pending', 'effect': '유용비율 ↑'},
+      'p36': {'title': '효과 판정 기준 변경', 'status': 'pending', 'effect': ''},
+      'p37': {'title': 'scorecard 안 변경', 'status': 'pending', 'effect': ''}}
+for k, v in PR.items(): json.dump(v, open(f'{S12}/fb/proposals/{k}.json', 'w'), ensure_ascii=False)
+bt = open(f'{S12}/build.py', encoding='utf-8').read()
+eff_line = [l for l in bt.splitlines() if l.startswith('EFF = ')][0]
+sc_line = [l for l in bt.split('def scorecard(')[1].splitlines() if l.startswith('    ') and bt.count(l) == 1][0]
+tgt = [l for l in open(f'{S12}/rules.md', encoding='utf-8').read().splitlines() if l.startswith('- 목표값:')][0]
+wl = '- Aviloo battery | | !'
+jl(f'{S12}/patches.jsonl', [])
+jl(f'{S12}/patches_new.jsonl', [
+    {'id': 'p31', 'file': 'watchlist.md', 'old': wl, 'new': wl + '\n- 시험 검색어1 | | !'},
+    {'id': 'p32', 'file': 'improve.md', 'old': '6. 메타 점검:', 'new': '6. 메타 점검(되돌림):'},
+    {'id': 'p33', 'file': 'improve.md', 'old': '8. 대기 알림:', 'new': '8. 대기 알림(A):'},
+    {'id': 'p34', 'file': 'improve.md', 'old': '7. 기록:', 'new': '7. 기록(B):'},
+    {'id': 'p35', 'file': 'rules.md', 'old': tgt, 'new': tgt.replace('FP=1', 'FP=3')},
+    {'id': 'p36', 'file': 'build.py', 'old': eff_line, 'new': eff_line.replace("'win': 5", "'win': 3")},
+    {'id': 'p37', 'file': 'build.py', 'old': sc_line, 'new': sc_line + '  # x'}])
+r = subprocess.run([sys.executable, f'{S12}/build.py', 'patch', REF], capture_output=True, text=True, env={**os.environ, 'EV_W': S12})
+o = r.stdout + r.stderr
+L12 = {l.split()[1]: l for l in o.splitlines() if l.split()[:1] and l.split()[0] in ('OK', 'FAIL', 'CHAT', 'HOLD')}
+check('묶음 금지: 반영 뒤 발행 10회차 안의 같은 지표 변경은 HOLD(p31)', L12.get('p31', '').startswith('HOLD p31') and 'p30' in L12['p31'] and '2/10' in L12['p31'], o)
+check('묶음 금지: 제목에 대상 번호를 적은 되돌림안은 예외(p32)', L12.get('p32', '').startswith('CHAT p32'), o)
+check('묶음 금지: 다른 지표는 통과(p33)', L12.get('p33', '').startswith('CHAT p33'), o)
+check('묶음 금지: 같은 처리에서 먼저 통과한 안과 겹치면 HOLD(p34)', L12.get('p34', '').startswith('HOLD p34') and 'p33' in L12['p34'], o)
+check('측정 기준: rules.md 목표값 줄은 고정 줄(p35)', L12.get('p35', '').startswith('FAIL p35 고정 줄'), o)
+check('측정 기준: EFF 변경 거부(p36)', L12.get('p36', '').startswith('FAIL p36 측정 기준'), o)
+check('측정 기준: scorecard 안 변경 거부(p37)', L12.get('p37', '').startswith('FAIL p37 측정 기준'), o)
+check('묶음 금지: HOLD·FAIL 안은 유지 목록에 없음', not {json.loads(l)['id'] for l in open(f'{S12}/patches_keep.jsonl', encoding='utf-8')} & {'p31', 'p34', 'p35', 'p36', 'p37'})
+r = subprocess.run([sys.executable, f'{S12}/build.py', 'batchcheck', f'{S12}/fb', 'c9', '핵심원출처 ↑', '채팅 변경'], capture_output=True, text=True, env={**os.environ, 'EV_W': S12})
+check('batchcheck: 채팅 변경도 같은 지표면 종료 1', r.returncode == 1 and 'HOLD c9' in r.stdout, r.stdout + r.stderr)
+r = subprocess.run([sys.executable, f'{S12}/build.py', 'batchcheck', f'{S12}/fb', 'c9', '놓침 ↓', '채팅 변경'], capture_output=True, text=True, env={**os.environ, 'EV_W': S12})
+check('batchcheck: 다른 지표면 종료 0', r.returncode == 0 and 'OK c9' in r.stdout, r.stdout + r.stderr)
+open(f'{S12}/metrics.md', 'a', encoding='utf-8').write('\n'.join(pub(f'2026-11-{d:02d}', 10 + d) for d in range(6, 14)) + '\n')  # 발행 10회차 채움
+r = subprocess.run([sys.executable, f'{S12}/build.py', 'batchcheck', f'{S12}/fb', 'p31'], capture_output=True, text=True, env={**os.environ, 'EV_W': S12})
+check('batchcheck: 발행 10회차가 지나면 같은 지표도 통과', r.returncode == 0, r.stdout + r.stderr)
 
 print(f'\n{"전부 통과" if not fails else "실패 " + ", ".join(fails)}')
 sys.exit(1 if fails else 0)

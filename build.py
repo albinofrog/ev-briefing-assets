@@ -34,6 +34,7 @@
   python3 build.py nextid DIR      보드 proposals의 다음 p번호(숫자 비교)
   python3 build.py probe           이번 회차 놓침 탐지 검색어 4개(rules.md 9절에서 metrics.md 회차 수로 순환, 검색어 언어로 연월을 붙임)
   python3 build.py board FILE [nodeliver]   briefing.json → 피드백 보드 db 쓰기 목록(/tmp/ev/board.json). 전달 실패면 nodeliver(항목 제외)
+  python3 build.py batchcheck DIR ID [EFFECT] [TITLE]   채팅 반영 전 묶음 금지 검사(effect 지표가 겹치는 변경이 반영 뒤 발행 BATCH_WIN회차 안이면 종료 1)
   python3 build.py guard OLD NEW   rules.md 고정 줄(사업 맥락·금지 항목·예산·금지 출처)이 바뀌었으면 종료 1
   python3 build.py feedback DIR SINCE   보드에서 받은 문서(DIR/<컬렉션>/<id>.json) → 신호(signals.md)·놓침 제보(missed.txt)·정답(gold.txt). 결정은 decide만 다룸
   python3 build.py trace CODE URL[|제목] ...   URL(못 찾으면 제목)이 수집·후보·장부·이월 어디서 빠졌는지 원인 코드 부여, signals.md에 추가
@@ -1739,7 +1740,8 @@ def cases(snapdir, gold, out):
     print(f'{out}: 판정 문항 {len(cs)}개')
 
 
-LOCK = [r'^## 0\.', r'^B\.once는', r'쓰지 않습니다:', r'출처로 쓰지 않는 곳', r'최대 25회', r'최대 15회', r'40회 이하', r'개선 단계 웹 호출']
+LOCK = [r'^## 0\.', r'^B\.once는', r'쓰지 않습니다:', r'출처로 쓰지 않는 곳', r'최대 25회', r'최대 15회', r'40회 이하', r'개선 단계 웹 호출',
+        r'^- 목표값:', r'^- 회차 창:']  # 마지막 둘은 측정 기준(가.3)
 
 
 def guard(old, new):
@@ -1970,12 +1972,19 @@ def patch_cmd(ref, keep_only=False, board_dir=None, auto=False):
         if any(e.get('file') == 'prompt' for e in ed): out.append(f'PROMPT {pid}')
     known = {e.get('id') for e in keep}
     auto_ok = []
+    bdir = board_dir if board_dir is not None else f'{W}/fb'  # 묶음 금지 검사용 보드 proposals(라절 3번은 /tmp/ev_next/fb 사본)
+    props = {p['_id']: p for p in doc_rows(bdir, 'proposals')} if os.path.isdir(f'{bdir}/proposals') else None
+    taken = {}  # 이번 처리에서 먼저 통과(OK·CHAT)한 승인분의 effect 지표
     for pid, ed in ({} if keep_only and not auto else by_id(read_jsonl(f'{W}/patches_new.jsonl'))).items():
         if pid in known: out.append(f'SKIP {pid} 이미 적용 중'); continue
         if auto and not {e.get('file') for e in ed} <= AUTO_FILES:
             out.append(f'FAIL {pid} auto 당일 적용은 watchlist.md·sources.md만(라절이 다시 처리)'); continue
+        if measure_touch(ed): out.append(f'FAIL {pid} 측정 기준 변경(가.3: 지표 계산·EFF·묶음 금지는 채팅에서 사용자 결정으로만)'); continue
         bad = [why for e in ed if e.get('file') == 'prompt' for r0, why in [prompt_guard(e.get('old') or '', e.get('new') or '', ptxt)] if r0 == 'fail']
         if bad: out.append(f'FAIL {pid} {bad[0]}'); continue
+        if props is None: out.append(f'WARN {pid} 보드 proposals 없음: 이전 반영과의 묶음 금지는 검사 못 함(같은 처리 안 겹침만 검사)')
+        hold = batch_block(pid, (props or {}).get(pid, {}), props or {}, taken)
+        if hold: out.append(f'HOLD {pid} 묶음 금지: {hold}'); continue
         files = {e.get('file') for e in ed} - {'prompt'}
         pick = lambda f: [l for l in (open(f'{W}/{f}', encoding='utf-8').read().splitlines() if os.path.exists(f'{W}/{f}') else [])
                           if any(re.search(x, l) for x in LOCK)]
@@ -1986,6 +1995,7 @@ def patch_cmd(ref, keep_only=False, board_dir=None, auto=False):
             if any(pick(f) != lock0[f] for f in files): why = '고정 줄 변경'
             elif touched & {'rules.md', 'improve.md'}:  # 문구·고정 줄 검사는 통과. 판정 회귀가 없어 사용자 확인(채팅, eval/replay.md)으로 넘김
                 for p, t in back.items(): open(p, 'w', encoding='utf-8').write(t)
+                taken[pid] = effect_keys((props or {}).get(pid, {}).get('effect'))
                 out.append(f'CHAT {pid} 판정 규칙·자가개선 절차 변경: 채팅 반영'); continue
             elif 'build.py' in touched and subprocess.run([sys.executable, '-m', 'py_compile', f'{W}/build.py'],
                                                           capture_output=True).returncode:
@@ -1997,7 +2007,7 @@ def patch_cmd(ref, keep_only=False, board_dir=None, auto=False):
                 for p, t in back.items(): open(p, 'w', encoding='utf-8').write(t)
                 r = 'fail'
         if r == 'fail': out.append(f'FAIL {pid} {why}'); continue
-        keep += ed; live.add(pid); auto_ok.append(pid)
+        keep += ed; live.add(pid); auto_ok.append(pid); taken[pid] = effect_keys((props or {}).get(pid, {}).get('effect'))
         out.append(f'OK {pid} {",".join(sorted(touched)) or "변경 없음"}')
         if any(e.get('file') == 'prompt' for e in ed): out.append(f'PROMPT {pid}')
     for f in ('patches_keep.jsonl',) + (('patches.jsonl',) if keep_only else ()):  # keep 모드는 뺀 개선안이 라절에 되살아나지 않게 patches.jsonl도 갱신
@@ -2023,6 +2033,70 @@ def patch_cmd(ref, keep_only=False, board_dir=None, auto=False):
         print(f"수집 범위 수정 {len(coll)}건({', '.join(coll)}): 저장소 통합 전까지 GitHub Actions 수집에 들어가지 않음(→ {W}/collect_scope.txt)"
               + (f" → 새 검색어 {len(allterms)}개 중 {len(terms)}개 {W}/pending_collect.txt(회차가 WebSearch로 대신 찾음, 회차마다 {PENDING_MAX}개씩 돌려 씀)" if terms else ''))
     print(f'patches_keep.jsonl {len(keep)}줄 → 메모리 patches.md')
+
+
+BATCH_WIN = 10  # 묶음 금지 창(가.3 측정 기준): effect 지표가 겹치는 변경은 앞 변경 반영 뒤 발행 10회차가 지나야 적용
+EFFECT_NAMES = ('핵심', '참고', '웹', '평가', '유용', '검토율', '주제공백', '수집실패', '이월', '놓침', '출처12비율', '자체판정2', '자체판정1',
+                '핵심원출처', '관련12본문', '참고원출처', '관련12건수', '유용비율', 'FP', 'OVER', 'UNDER', '중복경고', '중복채택', '전달후발견')
+MEASURE_DEFS = ('pub_lines', 'rated', 'targets', 'scorecard', 'mval', 'judge_diff', 'effect', 'effect_keys', 'pub_since', 'batch_block', 'measure_touch')
+MEASURE_RX = re.compile(r'^(EFF|EVAL_K|RATIO_K|HIGHER|BATCH_WIN|EFFECT_NAMES|MEASURE_DEFS|MEASURE_RX)\b', re.M)
+
+
+def effect_keys(s):
+    """개선안 effect 문구 → 움직이려는 지표 이름 집합(재발 지표는 '재발:<원인 코드>')."""
+    s = s or ''
+    alt = '|'.join(sorted(map(re.escape, EFFECT_NAMES), key=len, reverse=True))
+    return set(re.findall(rf'(?<!\w)({alt})(?!\w)', s)) | {'재발:' + c.strip() for c in re.findall(r'재발\s*[↑↓]?\s*\(([^)]+)\)', s)}
+
+
+def pub_since(day):
+    """KST 날짜(YYYY-MM-DD) 뒤의 발행 회차 수(metrics.md)."""
+    return sum(1 for l in pub_lines() if l[:10] > day)
+
+
+def batch_block(pid, p, props, taken):
+    """묶음 금지: effect 지표가 겹치는 다른 변경이 이번 처리에서 먼저 통과했거나, 반영 뒤 발행 BATCH_WIN회차가 안 지났으면 사유. 아니면 ''.
+    제목에 '<그 번호> 되돌림'을 적은 되돌림안은 그 번호에 대해서만 예외."""
+    mine = effect_keys(p.get('effect'))
+    if not mine: return ''
+    rev = lambda q: bool(re.search(rf'(?<![0-9a-z]){q}(?!\d)\s*되돌림', p.get('title') or ''))
+    for q, ks in taken.items():
+        if ks & mine and not rev(q): return f"같은 처리에서 먼저 통과한 {q}와 effect 지표 겹침({','.join(sorted(ks & mine))})"
+    for q, o in props.items():
+        if q == pid or o.get('status') != 'applied' or not o.get('applied_at'): continue
+        ov = effect_keys(o.get('effect')) & mine
+        if not ov or rev(q): continue
+        try: n = pub_since(kst(o['applied_at']).strftime('%Y-%m-%d'))
+        except ValueError: continue
+        if n < BATCH_WIN: return f"{q}(effect {','.join(sorted(ov))}) 반영 뒤 발행 {n}/{BATCH_WIN}회차"
+    return ''
+
+
+def measure_touch(ed):
+    """build.py 수정이 측정 기준(지표 계산·효과 판정·묶음 금지 함수와 상수)을 건드리는가."""
+    t = open(f'{W}/build.py', encoding='utf-8').read() if os.path.exists(f'{W}/build.py') else ''
+    for e in ed:
+        if e.get('file') != 'build.py': continue
+        old, new = e.get('old') or '', e.get('new') or ''
+        if MEASURE_RX.search(old) or MEASURE_RX.search(new) or re.search(r'^def (' + '|'.join(MEASURE_DEFS) + r')\b', old + '\n' + new, re.M):
+            return True
+        i = t.find(old)
+        if i < 0 or not re.match(r'[ \t]', t[t.rfind('\n', 0, i) + 1:i + 1] or 'x'): continue  # 최상위 줄은 위 상수 검사로 충분
+        defs = re.findall(r'^def (\w+)', t[:i], re.M)
+        if defs and defs[-1] in MEASURE_DEFS: return True
+    return False
+
+
+def batchcheck(d, pid, effect_txt=None, title=None):
+    """채팅 반영 전 묶음 금지 검사: 보드 사본 DIR의 proposals 기준. 통과 종료 0, HOLD 종료 1."""
+    props = {p['_id']: p for p in doc_rows(d, 'proposals')} if os.path.isdir(f'{d}/proposals') else None
+    if props is None: sys.exit(f'보드 proposals 없음: {d}/proposals')
+    p = dict(props.get(pid, {}))
+    if effect_txt is not None: p['effect'] = effect_txt
+    if title is not None: p['title'] = title
+    why = batch_block(pid, p, props, {})
+    print(f'HOLD {pid} 묶음 금지: {why}' if why else f'OK {pid} 묶음 금지 통과(effect {",".join(sorted(effect_keys(p.get("effect")))) or "지표 없음"})')
+    sys.exit(1 if why else 0)
 
 
 def pub_lines():
@@ -2270,5 +2344,6 @@ if __name__ == '__main__':
     elif a[0] == 'coverage': coverage()
     elif a[0] == 'snapshot': snapshot(a[1])
     elif a[0] == 'cases': cases(a[1], a[2], a[3])
+    elif a[0] == 'batchcheck': batchcheck(a[1], a[2], a[3] if len(a) > 3 else None, a[4] if len(a) > 4 else None)
     elif a[0] == 'selftest': sys.exit(0 if selftest() else 1)
     else: sys.exit(__doc__)
