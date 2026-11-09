@@ -35,6 +35,8 @@
   python3 build.py nextid DIR      보드 proposals의 다음 p번호(숫자 비교)
   python3 build.py probe           이번 회차 놓침 탐지 검색어 4개(rules.md 9절에서 metrics.md 회차 수로 순환, 검색어 언어로 연월을 붙임)
   python3 build.py board FILE [nodeliver]   briefing.json → 피드백 보드 db 쓰기 목록(/tmp/ev/board.json). 전달 실패면 nodeliver(항목 제외)
+  python3 build.py checklist [noimprove] [noboard] [nodeliver]   회차 끝 절차 점검: 정상 종료 기록(/tmp/ev/.done)이 없는 필수 명령 출력, 있으면 종료 1
+  python3 build.py shadowrules ID DIR | shadow ID [DIR] | shadowscore DIR   그림자 판정: 대기 중 판정 규칙 개선안을 같은 후보에 적용해 결정이 갈린 기사를 보드 사례로, 사용자 사례 판정 집계
   python3 build.py propcheck DIR    새 개선안(/tmp/ev/proposals_new.json) 중 대기 중 개선안과 같은 줄을 고치거나 이미 오간 수정을 또 바꾸는 것을 뺌
   python3 build.py batchcheck DIR ID [EFFECT] [TITLE]   채팅 반영 전 묶음 금지 검사(effect 지표가 겹치는 변경이 반영 뒤 발행 BATCH_WIN회차 안이면 종료 1)
   python3 build.py audit check AUDIT.json ITEMS_DIR | board AUDIT.json WEEK | score DIR   주간 놓침 감사(독립 탐색 목록 ↔ 장부·보드 수록 대조, 보드 audit 쓰기, 주별 놓침률)
@@ -1454,6 +1456,12 @@ def feedback(d, since):
         why = ('감사 놓침 확인: ' + ((f.get('note') or '').strip() or (a.get('why') or '').strip()))[:80]
         miss.append(f"{a['url'].strip()} | {why}")
         gold.append(f"{due(a.get('date'))} | {uhash(a['url'])} | {a['url'].strip()} | 수록 | {why}")
+    shd = {o['_id']: o for o in doc_rows(d, 'shadow')}  # 그림자 판정 사례에 사용자가 고른 쪽 = 그 호 후보의 정답(평가 세트)
+    for f in doc_rows(d, 'shadow_fb'):
+        sid, _, k = f['_id'].rpartition('-')
+        o = shd.get(sid); c = next((x for x in (o or {}).get('cases') or [] if str(x.get('k')) == k), None)
+        if (f.get('at') or '') <= since or not c or not c.get('url') or f.get('verdict') not in ('new', 'base'): continue
+        gold.append(f"{o['issue']} | {uhash(c['url'])} | {c['url']} | {c['new'] if f['verdict'] == 'new' else c['base']} | 사례 판정({o['proposal']})")
     props = {p['_id']: p for p in doc_rows(d, 'proposals')}
     orphan = [f"{x['_id']} | {x.get('decision')} | 개선안 문서 없음" for x in doc_rows(d, 'decisions')
               if x['_id'] not in props and (x.get('at') or '') > since]  # 결정 처리는 decide가 맡음
@@ -1461,7 +1469,7 @@ def feedback(d, since):
     open(f'{W}/gold.txt', 'w').write('\n'.join(gold) + ('\n' if gold else ''))
     open(f'{W}/missed.txt', 'w').write('\n'.join(miss) + ('\n' if miss else ''))
     json.dump(cnt, open(f'{W}/fb_count.json', 'w'))
-    latest = max([o.get('at') or '' for c in ('feedback', 'missed', 'decisions', 'audit_fb') for o in doc_rows(d, c)] + [since])
+    latest = max([o.get('at') or '' for c in ('feedback', 'missed', 'decisions', 'audit_fb', 'shadow_fb') for o in doc_rows(d, c)] + [since])
     print(f"신호 {len(sig)}줄 → {W}/signals.md\n놓침 제보 {len(miss)}건 → {W}/missed.txt (trace MISS-U로 원인 확인)\n정답 {len(gold)}줄 → {W}/gold.txt\n"
           f"평가 {cnt['평가']}건 중 유용 {cnt['유용']}건\nfb_seen 다음 값: {latest}")
     for l in orphan: print('  대응 개선안 없는 결정(오류에 적음): ' + l)
@@ -2566,9 +2574,101 @@ def reapply_assets():
     if out: print('적용 중인 수정(sources·watchlist): ' + ', '.join(out))
 
 
-if __name__ == '__main__':
-    a = sys.argv[1:]
-    if not a: sys.exit(__doc__)
+SUBCMD = {'ledger', 'lessons', 'audit', 'trim', 'failpush'}  # 하위 명령까지 표시를 나눔(ledger-board 등)
+
+
+def mark_done(a):
+    """정상 종료한 명령을 W/.done에 기록(checklist가 회차 절차 누락을 찾는 데 씀). 작업 폴더가 없으면 건너뜀."""
+    if not os.path.isdir(W) or a[0] in ('checklist', 'schema', 'selftest'): return
+    name = a[0] + (f'-{a[1]}' if a[0] in SUBCMD and len(a) > 1 else '')
+    with open(f'{W}/.done', 'a', encoding='utf-8') as f: f.write(name + '\n')
+
+
+STEPS = [  # (표시, 프롬프트·improve.md 위치, 조건): 조건은 checklist 인자로 끔(noimprove: 라절 없음, noboard: 보드 못 읽음, nodeliver: 수록 0·전달 실패)
+    ('ledger-merge', '나.4', ''), ('prep', '나.5', ''), ('snapcap', '나.5', ''), ('coverage', '다.1·3', ''), ('check', '다.5', ''), ('render', '다.6', ''),
+    ('ledger-board', '다.8', 'deliver'), ('feedback', 'improve 1', 'improve board'), ('probe', 'improve 1', 'improve'), ('scorecard', 'improve 1', 'improve'),
+    ('lessons-pull', 'improve 2', 'improve board'), ('lessons-attach', 'improve 2', 'improve board'), ('decide', 'improve 3', 'improve board'),
+    ('patch', '나.3', 'improve board'), ('promote', 'improve 4', 'improve board'), ('lessons-push', 'improve 7', 'improve board'),
+    ('lessons-commit', 'improve 7', 'improve board'), ('board', 'improve 7', 'improve'), ('waiting', 'improve 8', 'improve board')]
+
+
+def checklist(flags):
+    """회차 끝(마.1 전): 이번 작업 폴더에서 정상 종료 기록이 없는 필수 명령 = 건너뛴 절차. 종료 1이면 누락 있음(run_log에 '절차 누락:' 한 줄)."""
+    done = set(open(f'{W}/.done', encoding='utf-8').read().split()) if os.path.exists(f'{W}/.done') else set()
+    off = {'improve': 'noimprove' in flags, 'board': 'noboard' in flags, 'deliver': 'nodeliver' in flags}
+    miss = [f'{n}({w})' for n, w, cond in STEPS if n not in done and not any(off[c] for c in cond.split())]
+    print('절차 점검: ' + ('누락 없음' if not miss else '누락 ' + ', '.join(miss)) + f" (정상 종료 기록 {len(done)}종, 끈 조건: {', '.join(k for k, v in off.items() if v) or '없음'})")
+    sys.exit(1 if miss else 0)
+
+
+def shadow_rules(pid, d):
+    """판정 규칙 개선안(DIR/proposals/pid)의 edits를 W/rules.md 사본에 적용 → W/rules_shadow_<pid>.md, 바뀐 줄을 출력(그림자 판정용, 이번 회차 판정에는 안 씀)."""
+    props = {o['_id']: o for o in doc_rows(d, 'proposals')}
+    p = props.get(pid) or sys.exit(f'보드 proposals에 {pid} 없음')
+    ed = [e for e in (p.get('edits') or []) if e.get('file') == 'rules.md']
+    if not ed: sys.exit(f'{pid}: rules.md edits 없음(그림자 판정 대상 아님)')
+    t = open(f'{W}/rules.md', encoding='utf-8').read()
+    for e in ed:
+        if t.count(e['old']) != 1: sys.exit(f"{pid}: 고칠 문구가 rules.md 사본에 {t.count(e['old'])}곳(이미 반영됐거나 충돌)")
+        t = t.replace(e['old'], e.get('new') or '')
+    open(f'{W}/rules_shadow_{pid}.md', 'w', encoding='utf-8').write(t)
+    print(f"{W}/rules_shadow_{pid}.md ({p.get('title', '')[:50]})")
+    for e in ed: print(f"  - 전: {e['old'][:200]}\n    후: {(e.get('new') or '(삭제)')[:200]}")
+
+
+SHADOW_MAX = 5  # 개선안 하나에 모으는 사례 수 상한(이만큼 모이면 더 판정하지 않음)
+
+
+def shadow_cmd(pid, d=None):
+    """W/shadow_<pid>.tsv(후보번호<TAB>새 규칙의 결정<TAB>사유, 결정이 달라지는 후보만) + decisions.tsv(이번 회차 결정) + candidates.md
+    → 보드 shadow 문서(W/shadow_board.json). 사례마다 사용자가 '새 규칙이 맞음/지금 규칙이 맞음'을 고름(보드 shadow_fb)."""
+    st = now_state(); iss = st['issue'] + 1
+    have = sum(len(o.get('cases') or []) for o in doc_rows(d, 'shadow') if o.get('proposal') == pid) if d else 0
+    base = {}
+    for ln in (open(f'{W}/decisions.tsv', encoding='utf-8').read().splitlines() if os.path.exists(f'{W}/decisions.tsv') else []):
+        c = ln.split('\t')
+        if len(c) >= 3: base[c[0].strip()] = c[2].strip()
+    cand = {}
+    for ln in (open(f'{W}/candidates.md', encoding='utf-8').read().splitlines() if os.path.exists(f'{W}/candidates.md') else []):
+        m = re.match(r'\s*(?:↳ )?(c\d+(?:-\d+)?) \|', ln)
+        if m:
+            c = [x.strip() for x in ln.split(' | ')]
+            cand[m.group(1)] = (c[3] if len(c) > 3 else '', c[-1] if c[-1].startswith('http') else '')
+    cases, bad = [], []
+    for ln in (open(f'{W}/shadow_{pid}.tsv', encoding='utf-8').read().splitlines() if os.path.exists(f'{W}/shadow_{pid}.tsv') else []):
+        c = [x.strip() for x in ln.split('\t')]
+        if len(c) < 3 or not c[0]: continue
+        k, new, why = c[0], c[1], c[2]
+        if k not in cand or k not in base: bad.append(f'{k}: 후보 목록·decisions.tsv에 없음'); continue
+        if new not in ('핵심', '참고', '제외') or new == base[k]: bad.append(f'{k}: 새 결정 {new}이 기존 {base[k]}과 같거나 형식 오류'); continue
+        cases.append({'k': len(cases) + 1, 'cand': k, 'title': cand[k][0][:120], 'url': cand[k][1], 'base': base[k], 'new': new, 'why': why[:160]})
+    cases = cases[:max(0, SHADOW_MAX - have)]
+    w = [{'op': 'set', 'collection': 'shadow', 'doc_id': f'sh{iss:03d}-{pid}', 'data': {'proposal': pid, 'issue': iss, 'n': len(cases), 'cases': cases,
+          'at': dt.datetime.now(dt.timezone.utc).isoformat()[:19] + 'Z'}}]
+    json.dump(w, open(f'{W}/shadow_board.json', 'w'), ensure_ascii=False)
+    print(f"{W}/shadow_board.json ({pid}: 결정이 달라진 후보 {len(cases)}건, 지금까지 {have}건) → ArtifactData batch")
+    for x in bad: print('  버림 ' + x)
+
+
+def shadow_score(d):
+    """보드 shadow·shadow_fb → 개선안별 사례 판정 집계(채팅 반영·승인 판단용)."""
+    fb = {o['_id']: o.get('verdict') for o in doc_rows(d, 'shadow_fb')}
+    tal = {}
+    for o in doc_rows(d, 'shadow'):
+        t = tal.setdefault(o.get('proposal'), {'new': 0, 'base': 0, 'wait': 0})
+        for c in o.get('cases') or []:
+            v = fb.get(f"{o['_id']}-{c['k']}")
+            t[v if v in ('new', 'base') else 'wait'] += 1
+    for pid, t in sorted(tal.items(), key=lambda x: pnum_key(x[0])):
+        verdict = '새 규칙 우세' if t['new'] > t['base'] else '지금 규칙 우세' if t['base'] > t['new'] else '동률·판정 없음'
+        print(f"{pid} | 새 규칙이 맞음 {t['new']} · 지금 규칙이 맞음 {t['base']} · 판정 대기 {t['wait']} | {verdict}")
+    if not tal: print('그림자 판정 사례 없음')
+
+
+pnum_key = lambda i: int(re.sub(r'\D', '', i) or 0)
+
+
+def _dispatch(a):
     if a[0] == 'prep':  # 출력은 화면과 W/prep.txt(평가 스냅샷용) 둘 다
         buf = io.StringIO()
         class _Tee:
@@ -2611,7 +2711,24 @@ if __name__ == '__main__':
     elif a[0] == 'snapshot': snapshot(a[1])
     elif a[0] == 'cases': cases(a[1], a[2], a[3])
     elif a[0] == 'audit': audit_cmd(a[1], a[2:])
+    elif a[0] == 'checklist': checklist(a[1:])
+    elif a[0] == 'shadowrules': shadow_rules(a[1], a[2])
+    elif a[0] == 'shadow': shadow_cmd(a[1], a[2] if len(a) > 2 else None)
+    elif a[0] == 'shadowscore': shadow_score(a[1])
     elif a[0] == 'propcheck': propcheck_cmd(a[1])
     elif a[0] == 'batchcheck': batchcheck(a[1], a[2], a[3] if len(a) > 3 else None, a[4] if len(a) > 4 else None)
     elif a[0] == 'selftest': sys.exit(0 if selftest() else 1)
     else: sys.exit(__doc__)
+
+
+if __name__ == '__main__':
+    a = sys.argv[1:]
+    if not a: sys.exit(__doc__)
+    _code = 0
+    try:
+        _dispatch(a)
+    except SystemExit as e:
+        _code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
+        if isinstance(e.code, str): print(e.code, file=sys.stderr)
+    if _code == 0: mark_done(a)
+    sys.exit(_code)
