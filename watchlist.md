@@ -10,7 +10,7 @@
 주제어: SOH, state of health, battery health, 배터리 상태, 배터리 데이터, 성능평가, 성능점검, 진단, 배터리 인증, 상태 인증, 이력관리, 여권, passport, Batteriepass, Batteriezustand, 차량 데이터, vehicle data, data access, Data Act, right to repair, repair act, OBD, BMS, Fahrzeugdaten, 電池劣化, 診断, スキャンツール, 电池健康, 溯源, 检测, 护照, 사용후, second-life, 재사용, 재제조
 - "battery passport" OR "digital product passport" battery
 - "Data Act" vehicle data | GB:en
-- 차량 데이터 개방
+- "차량 데이터" 개방
 - in-vehicle data access
 - "right to repair" vehicle
 - OBD検査 | JP:ja
@@ -50,7 +50,9 @@
 - battery health used EV
 - 중고 전기차 배터리
 - 전기차 리스 잔존가치
+- 중고 전기차 시세
 - used EV prices
+- used EV prices | GB:en
 - gebrauchte Elektroautos Batterie
 - Restwert Elektroauto
 - used EV values | GB:en
@@ -69,6 +71,8 @@
 주제어: 보험, 손해율, insurance, insurer, premium, underwriting, versicherung, 保険, 保险, 车险
 - 전기차 보험료
 - 보험 배터리 데이터 전기차
+- 전기차 자동차보험 손해율
+- 전기차 화재 보험
 - EV insurance claims
 - EV 保険 バッテリー
 - 新能源车险
