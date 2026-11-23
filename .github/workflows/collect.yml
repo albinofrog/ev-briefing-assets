@@ -2,8 +2,8 @@ name: collect
 on:
   schedule:
     - cron: '23 * * * *'
-    # 07:00 KST 브리핑 직전 보강(평일 04:10·05:10·06:10 KST). GitHub 예약은 30~80분 늦거나 건너뛰어 브리핑 시작 전에 끝나도록 앞당겨 겹쳐 둠(p33)
-    - cron: '10 19,20,21 * * 0-4'
+    # 07:00 KST 브리핑 직전 보강(평일 06:10·06:40 KST). GitHub 예약은 자주 건너뛰어 슬롯을 겹쳐 둠
+    - cron: '10,40 21 * * 0-4'
   workflow_dispatch:
   push:
     branches: [main]

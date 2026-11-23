@@ -194,6 +194,57 @@ def read_mem():
     return int(m['issue']), m['watermark'], m.get('running', '-'), dfr
 
 
+LOCAL_KEEP = 600  # state.md local: 줄에 남기는 현장 수집 키 상한(키 12자, 약 8KB)
+LOCAL_TIMEOUT = 1500  # 현장 수집 제한 시간(초). Actions 실행 중앙 3분·최대 29분
+LOCAL_MIN_OK = 0.5  # 목록·검색어 가운데 이 비율 미만만 성공하면 접속 차단으로 보고 data 브랜치를 그대로 씀
+COLLECT_DEPS = ['feedparser==6.0.11', 'requests==2.32.3', 'googlenewsdecoder==0.2.1', 'selectolax<1.0', 'httpx<1.0']  # collect.yml과 같게
+
+
+def read_local():
+    """memstate.md의 local: 줄(직전 회차 현장 수집이 새로 넣은 항목 키). 없으면 빈 집합."""
+    p = f'{W}/memstate.md'
+    m = re.search(r'^local:\s*(\S+)', open(p).read(), re.M) if os.path.exists(p) else None
+    return {k for k in (m.group(1).split(',') if m else []) if re.fullmatch(r'[0-9a-f]{12}', k)}
+
+
+def local_collect(ref):
+    """브리핑 직전 현장 수집(c15): data 브랜치에서 받은 이력 위에 ref의 collect.py를 한 번 더 돌려 W/items.jsonl·status.json을 바꿈.
+    받기·설치·실행 실패, 시간 초과, 성공 비율 LOCAL_MIN_OK 미만(접속 차단)이면 data 브랜치 파일을 그대로 둠.
+    반환: (새로 넣은 키 목록 또는 None, 한 줄 요약)."""
+    import shutil
+    if os.environ.get('EV_LOCAL_COLLECT') == 'off': return None, '현장 수집: 꺼짐(EV_LOCAL_COLLECT=off), data 브랜치 사용'
+    d = f'{W}/collect'
+    shutil.rmtree(d, ignore_errors=True); os.makedirs(f'{d}/out')
+    src = os.environ.get('EV_COLLECT_PY') or (REPO.replace('/main/', f'/{ref}/') if ref else REPO) + 'collect.py'
+    if os.path.exists(src): shutil.copy(src, f'{d}/collect.py'); err = ''
+    else: err = curl(src, f'{d}/collect.py')
+    if err: return None, f'경고: 현장 수집 실패(collect.py 받기: {err[:80]}), data 브랜치 사용'
+    for f in ('sources.md', 'watchlist.md'): shutil.copy(f'{W}/{f}', f'{d}/{f}')  # 적용 중인 수정이 들어간 사본
+    shutil.copy(f'{W}/items.jsonl', f'{d}/out/items.jsonl'); shutil.copy(f'{W}/status.json', f'{d}/out/status_prev.json')
+    chk = subprocess.run([sys.executable, '-I', '-c', 'import feedparser, requests, googlenewsdecoder, selectolax, httpx'], capture_output=True)
+    if chk.returncode:
+        r = subprocess.run([sys.executable, '-m', 'pip', 'install', '-q', '--break-system-packages'] + COLLECT_DEPS, capture_output=True, text=True, timeout=300)
+        if r.returncode: return None, f'경고: 현장 수집 실패(패키지 설치: {(r.stderr or "").strip()[-80:]}), data 브랜치 사용'
+    t0 = dt.datetime.now()
+    try:
+        r = subprocess.run([sys.executable, '-I', f'{d}/collect.py', f'{d}/out'], capture_output=True, text=True, timeout=LOCAL_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return None, f'경고: 현장 수집 실패({LOCAL_TIMEOUT}초 초과), data 브랜치 사용'
+    secs = int((dt.datetime.now() - t0).total_seconds())
+    if r.returncode or not os.path.exists(f'{d}/out/status.json'):
+        return None, f'경고: 현장 수집 실패(종료 {r.returncode}: {(r.stderr or "").strip()[-80:]}), data 브랜치 사용'
+    s = json.load(open(f'{d}/out/status.json', encoding='utf-8'))
+    allv = list(s.get('lists', {}).values()) + list(s.get('watch', {}).values())
+    ok = sum(1 for v in allv if v.get('ok'))
+    if not allv or ok < LOCAL_MIN_OK * len(allv):
+        return None, f'경고: 현장 수집 실패(성공 {ok}/{len(allv)}, 접속 차단 의심: claude.ai 허용 도메인 확인), data 브랜치 사용'
+    old = {json.loads(l)['key'] for l in open(f'{W}/items.jsonl', encoding='utf-8') if l.strip()}
+    new = [o['key'] for o in (json.loads(l) for l in open(f'{d}/out/items.jsonl', encoding='utf-8') if l.strip())
+           if o['key'] not in old and not o.get('stub')]
+    shutil.copy(f'{d}/out/items.jsonl', f'{W}/items.jsonl'); shutil.copy(f'{d}/out/status.json', f'{W}/status.json')
+    return new, f'현장 수집: 새 항목 {len(new)}건, 성공 {ok}/{len(allv)}, {secs}초'
+
+
 INJECT = re.compile(r'ignore (all |the )?(previous|above)|system prompt|you are (now )?(an? )?(ai|assistant|claude)|'
                     r'지시(를|사항을)? 무시|이전 지시|프롬프트를|<\s*/?\s*(system|instructions?)', re.I)
 
@@ -232,6 +283,11 @@ def prep():
     if fails:
         print('필수 파일 실패: ' + ', '.join(fails)); sys.exit(1)
     reapply_assets()
+    prev_local = read_local()
+    data_keys = {json.loads(l)['key'] for l in open(f'{W}/items.jsonl', encoding='utf-8') if l.strip()}
+    added, lmsg = local_collect(ref)
+    print(lmsg)
+    st['local_next'] = sorted((set(added or []) | (prev_local - data_keys)))[-LOCAL_KEEP:]  # 다음 회차가 data 브랜치에 늦게 들어온 같은 항목을 새 후보로 다시 보지 않게
     status = json.load(open(f'{W}/status.json'))
     age = kst(st['start']) - kst(status['generated_at'])
     print(f"수집 데이터: {status['generated_at']} 생성({int(age.total_seconds() // 3600)}시간 전), 보관 {status['total']}건")
@@ -251,6 +307,7 @@ def prep():
         newest = max(newest, o['first_seen'])
         carried = o['key'] in dfr
         if not carried and (o.get('bf') or o['first_seen'][:19] <= wm[:19].replace('Z', '')): continue  # bf: 첫 수집 때 발행 시각 없이 잡힌 기존 항목
+        if not carried and o['key'] in prev_local: continue  # 직전 회차가 현장 수집으로 이미 본 항목(Actions가 나중에 data 브랜치에 넣어 first_seen이 늦음)
         old = bool(o['pub']) and o['pub'][:19] < lo
         # 기준 이전이라도 7일 안이면 이월 항목과, 제목이 관련도 1로 보이는 항목은 남김(rules.md 3절 early_public 예외 대상)
         early = old and not carried and o['pub'][:19] >= hlo and bool(R1.search(unicodedata.normalize('NFKC', o['title'])))
@@ -1109,6 +1166,7 @@ def render(path):
     ck = json.load(open(f'{W}/cand_keys.json')) if os.path.exists(f'{W}/cand_keys.json') else {}
     dkeys = ','.join(ck[x] for x in d.get('deferred', []) if x in ck) or '-'
     mem = f"issue: {issue if items and files else st['issue']}\nwatermark: {st['watermark_next']}\nrunning: -\ndeferred: {dkeys}\n"
+    if st.get('local_next'): mem += f"local: {','.join(st['local_next'])}\n"
     open(f'{W}/memstate_next.md', 'w').write(mem)
     print('\n== 파일(전달 순서) ==\n' + ('\n'.join(files) or '없음'))
     print('== 장부 줄(5줄씩 추가) ==\n' + ('\n'.join(ledger) or '없음'))
