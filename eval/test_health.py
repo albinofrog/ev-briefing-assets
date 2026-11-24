@@ -56,5 +56,14 @@ check('건강 검사 기준(SCORE_FIXTURE)은 개선안으로 못 고침(measure
 cl = [l for l in src.splitlines() if l.startswith('COLLAPSE = ')][0]
 check('건강 검사 기준(COLLAPSE)은 개선안으로 못 고침', b.measure_touch([{'file': 'build.py', 'old': cl, 'new': cl.replace('0.15', '0.01')}]) is True)
 
+# c16: prep이 수집 지연을 state에 남기면 render가 푸시 앞에 [경고] 수집 지연을 붙임(한 번만)
+base = {'start': '2026-11-24T22:10:00+00:00', 'cutoff': '2026-11-21T22:10:00+00:00', 'issue': 43, 'watermark_next': 'x'}
+b.check = lambda path, quiet=False: ({'items': [], 'calls': {}}, [])
+for stale, want in ((True, 1), (False, 0)):
+    json.dump({**base, 'stale': stale}, open(f'{T}/state.json', 'w'))
+    b.render(f'{T}/briefing.json')
+    push = open(f'{T}/push.txt').read()
+    check(f'푸시: 수집 지연 {stale}면 경고 {want}번', push.count('[경고] 수집 지연') == want, push)
+
 print(f'\n{"전부 통과" if not fails else "실패 " + ", ".join(fails)}')
 sys.exit(1 if fails else 0)

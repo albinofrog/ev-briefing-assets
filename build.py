@@ -291,7 +291,8 @@ def prep():
     status = json.load(open(f'{W}/status.json'))
     age = kst(st['start']) - kst(status['generated_at'])
     print(f"수집 데이터: {status['generated_at']} 생성({int(age.total_seconds() // 3600)}시간 전), 보관 {status['total']}건")
-    if age > dt.timedelta(hours=3):  # 브리핑 직전 슬롯(21:10·21:23·21:40Z)을 모두 건너뛰면 경고
+    st['stale'] = age > dt.timedelta(hours=3)  # render가 푸시 앞에 [경고] 수집 지연을 붙임(c16)
+    if st['stale']:  # 브리핑 직전 슬롯(21:10·21:23·21:40Z)을 모두 건너뛰면 경고
         print('경고: 수집 데이터가 3시간 넘게 갱신되지 않음(GitHub Actions 확인 필요)')
     sent = read_sent()
     seen = {h for r in sent for h in [r['url'] if r['url'].startswith('u:') else uhash(r['url'])] + r['alt']} if isinstance(sent, list) else set()
@@ -1144,6 +1145,7 @@ def render(path):
     if st.get('gdown'): push = '[경고] 구글 수집 중단 ' + push
     if st.get('collapse'): push = '[경고] 수집량 급감 ' + push
     if st.get('scorefail'): push = '[경고] 점수 검사 실패 ' + push
+    if st.get('stale') and '[경고] 수집 지연' not in push: push = '[경고] 수집 지연 ' + push
     nw = waiting_count(f'{W}/fb0')  # 준비 단계(프롬프트 나.3)가 받은 보드 사본 기준
     if nw: push = f'[승인 대기 {nw}] ' + push
     bu = board_url()
