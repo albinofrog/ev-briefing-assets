@@ -65,5 +65,17 @@ for stale, want in ((True, 1), (False, 0)):
     push = open(f'{T}/push.txt').read()
     check(f'푸시: 수집 지연 {stale}면 경고 {want}번', push.count('[경고] 수집 지연') == want, push)
 
+# c17: trim log는 최근 15회만, 그 가운데 앞 10회는 머리·수록·탈락 줄만 남김
+blk = lambda n: f'## 제{n:03d}호 | 시작 x\n호출: 본문 1\n수록: a{n}\n탈락: b{n}\n오류: ' + 'e' * 1500 + '\n개선 오류: ' + 'f' * 1500
+open(f'{T}/run_log.md', 'w').write('\n'.join(blk(n) for n in range(1, 21)) + '\n')
+b.trim('log')
+out = open(f'{T}/run_log_trimmed.md').read()
+heads = [l for l in out.splitlines() if l.startswith('## ')]
+check('trim log: 최근 15회 유지', len(heads) == 15 and heads[0].startswith('## 제006호') and heads[-1].startswith('## 제020호'), str(heads[:2]))
+check('trim log: 모든 회차의 수록·탈락 줄 유지', all(f'수록: a{n}' in out and f'탈락: b{n}' in out for n in range(6, 21)))
+old = out.split('## 제016호')[0]
+check('trim log: 앞 10회는 오류·개선 줄 삭제, 최근 5회는 그대로', '오류:' not in old and out.split('## 제016호')[1].count('개선 오류:') == 5)
+check('trim log: 30KB 아래', len(out.encode()) < 30 * 1024, str(len(out.encode())))
+
 print(f'\n{"전부 통과" if not fails else "실패 " + ", ".join(fails)}')
 sys.exit(1 if fails else 0)

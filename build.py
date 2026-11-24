@@ -1418,8 +1418,11 @@ def trim(what):
         print(f'{W}/sent_trimmed.md ({len(lines)}줄, {lim} 이후) → memory_write로 덮어씀')
     else:
         t = open(f'{W}/run_log.md').read()
-        blocks = [b for b in re.split(r'\n(?=## )', t) if b.strip()]
-        keep = '\n'.join(blocks[-15:]).strip() + '\n'
+        blocks = [b for b in re.split(r'\n(?=## )', t) if b.strip()][-15:]
+        # c17: 최근 5회 블록은 그대로, 그 앞 블록은 check가 대조에 쓰는 머리·수록·탈락 줄만 남겨 30KB 아래로 줄임
+        short = lambda b: '\n'.join(l for l in b.splitlines() if l.startswith(('## ', '수록:', '탈락:')))
+        blocks = [short(b) for b in blocks[:-5]] + blocks[-5:]
+        keep = '\n'.join(b.strip() for b in blocks).strip() + '\n'
         open(f'{W}/run_log_trimmed.md', 'w').write(keep)
         print(f'{W}/run_log_trimmed.md (최근 {min(15, len(blocks))}회) → memory_write로 덮어씀')
 
