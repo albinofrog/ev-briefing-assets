@@ -1,6 +1,6 @@
 # EV 시장·정책 브리핑 수집 목록
 
-GitHub Actions의 collect.py가 매시간 예약으로(예약이 자주 건너뛰어 실제 간격은 4~7시간) 이 파일(A·B·E절)과 watchlist.md를 읽어 data 브랜치의 items.jsonl에 새 항목을 쌓습니다. 주제 검색은 구글 뉴스가 주 경로이고 Bing은 예비입니다. 판정 규칙은 rules.md에, 표적 검색어는 watchlist.md에 있습니다.
+GitHub Actions의 collect.py가 매시간 예약으로(예약이 자주 건너뜀) 이 파일(A·B·E절)과 watchlist.md를 읽어 data 브랜치의 items.jsonl에 새 항목을 쌓고, 브리핑 직전 prep이 같은 collect.py를 현장에서 한 번 더 돌립니다. 주제 검색은 구글 뉴스가 주 경로이고 Bing은 예비입니다. 판정 규칙은 rules.md에, 표적 검색어는 watchlist.md에 있습니다.
 
 ## A. 목록
 형식: `- 이름 | 권역 | 방식 | URL | 옵션`
