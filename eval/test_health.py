@@ -77,5 +77,25 @@ old = out.split('## 제016호')[0]
 check('trim log: 앞 10회는 오류·개선 줄 삭제, 최근 5회는 그대로', '오류:' not in old and out.split('## 제016호')[1].count('개선 오류:') == 5)
 check('trim log: 30KB 아래', len(out.encode()) < 30 * 1024, str(len(out.encode())))
 
+# c18: 출처12비율은 본문 열람 '실패' 기사를 분자·분모에서 빼고, 뺀 수를 출처차단으로 남김
+shutil.copy(f'{REPO}/rules.md', T)
+json.dump({**base, 'stale': False}, open(f'{T}/state.json', 'w'))
+open(f'{T}/items.jsonl', 'w').write('')
+json.dump({'lists': {}, 'watch': {}}, open(f'{T}/status.json', 'w'))
+lst = sorted(b.src_info()['lists'])[0]
+urls = [f'https://{lst}/a', 'https://unlisted-a.example/x', 'https://unlisted-b.example/y', 'https://unlisted-c.example/z']
+open(f'{T}/candidates.md', 'w').write('## 점수 2\n' + ''.join(f'c{n} | 11-24 10:00 | 매체 | 제목 {u}\n' for n, u in enumerate(urls, 1)))
+open(f'{T}/decisions.tsv', 'w').write('c1\ty\t참고\t-\nc2\t실패\t참고\t차단\nc3\t실패\t참고\t차단\nc4\ty\t참고\t-\n')
+json.dump({'reviewed_hi': 4, 'cand_hi': 4, 'gaps': [], 'list_fail': [], 'watch_fail': []}, open(f'{T}/coverage.json', 'w'))
+b.coverage = lambda *a, **k: None
+it = lambda u: {'tier': 'ref', 'url': u, 'relevance': 3, 'body_read': False, 'source_tier': 3}
+json.dump({'items': [it(u) for u in urls], 'calls': {}}, open(f'{T}/briefing.json', 'w'))
+import contextlib, io
+with contextlib.redirect_stdout(io.StringIO()): b.scorecard(f'{T}/briefing.json')
+line = open(f'{T}/metrics_line.txt').read()
+check('출처12비율: 차단 2건 빼고 1/2 = 50%', ' 출처12비율 50% ' in line and ' 출처차단 2 ' in line, line[:200])
+check('출처12비율 분모 복원: 핵심+참고-출처차단 = 2', b.RATIO_K['출처12비율'](line) == 2)
+check('출처12비율 분모 복원: 출처차단 없는 옛 줄은 핵심+참고', b.RATIO_K['출처12비율']('x | 핵심 1 참고 3 | 출처 신뢰성 출처12비율 25%') == 4)
+
 print(f'\n{"전부 통과" if not fails else "실패 " + ", ".join(fails)}')
 sys.exit(1 if fails else 0)

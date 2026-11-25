@@ -1830,6 +1830,12 @@ def scorecard(path):
     cnt = lambda c: sum(1 for l in sig if l.startswith(c + ' '))
     own = lambda i: bool(i.get('origin') and nurl(i['origin']['url']) == nurl(i['url']))
     tiers = [auto_tier(i['url']) or (1 if own(i) else 0) for i in its]
+    # c18(2026-11-25 사용자 결정): 출처12비율은 본문 열람이 차단·실패한 기사(decisions.tsv 본문열람 '실패')를 분자·분모에서 뺌
+    dec = read_decisions()
+    try: c_of = {nurl(u): g['id'] for g in cand_groups() for u in g['urls']}
+    except FileNotFoundError: c_of = {}
+    blocked = [dec.get(c_of.get(nurl(i['url'])), ('',))[0] == '실패' for i in its]
+    t_ok = [x for x, bl in zip(tiers, blocked) if not bl]
     ver = lambda i: bool(i.get('origin')) and (auto_tier(i['url']) or not own(i))  # 목록 밖 매체의 본인 페이지 주장은 원출처 확인으로 세지 않음
     r12 = [i for i in its if i.get('relevance') in (1, 2)]
     fb = json.load(open(f'{W}/fb_count.json')) if os.path.exists(f'{W}/fb_count.json') else {'평가': 0, '유용': 0}
@@ -1844,7 +1850,8 @@ def scorecard(path):
     sc = {
         '검토율': pct(cov['reviewed_hi'], cov['cand_hi']), '주제공백': sum(1 for g in cov['gaps'] if not g['filled']),
         '수집실패': len(cov['list_fail']) + len(cov['watch_fail']), '이월': len(d.get('deferred', [])), '놓침': miss,
-        '출처12비율': pct(sum(1 for x in tiers if x in (1, 2)), len(its)), '자체판정2': sum(1 for x, i in zip(tiers, its) if not x and i.get('source_tier') == 2),
+        '출처12비율': pct(sum(1 for x in t_ok if x in (1, 2)), len(t_ok)), '자체판정2': sum(1 for x, i in zip(tiers, its) if not x and i.get('source_tier') == 2),
+        '출처차단': sum(blocked),  # c18: 출처12비율에서 뺀 본문 차단·실패 기사 수(목표 없음, 분모 복원용)
         '자체판정1': sum(1 for i in its if not auto_tier(i['url']) and own(i)),
         '핵심원출처': pct(sum(1 for i in core if ver(i)), len(core)), '관련12본문': pct(sum(1 for i in r12 if i.get('body_read')), len(r12)),
         '참고원출처': pct(sum(1 for i in its if i['tier'] != 'core' and i.get('body_read') and ver(i)), sum(1 for i in its if i['tier'] != 'core' and i.get('body_read'))),  # 목표 없음(참고용)
@@ -1853,7 +1860,7 @@ def scorecard(path):
     tg = targets()
     low = {'주제공백', '수집실패', '이월', '놓침', 'FP', 'OVER', 'UNDER', '자체판정2', '자체판정1', '전달후발견'}
     miss_t = [k for k, v in tg.items() if sc.get(k) is not None and (sc[k] > v if k in low else sc[k] < v)]
-    axis = {'검색 충분성': ['검토율', '주제공백', '수집실패', '이월', '놓침'], '출처 신뢰성': ['출처12비율', '자체판정2', '자체판정1', '핵심원출처', '관련12본문', '참고원출처'],
+    axis = {'검색 충분성': ['검토율', '주제공백', '수집실패', '이월', '놓침'], '출처 신뢰성': ['출처12비율', '출처차단', '자체판정2', '자체판정1', '핵심원출처', '관련12본문', '참고원출처'],
             '문서 관련성': ['관련12건수', '유용비율', 'FP', 'OVER', 'UNDER', '중복경고', '중복채택', '전달후발견']}
     issue = st['issue'] + (1 if its else 0)
     f = lambda k: '-' if sc[k] is None else (f'{sc[k]}%' if k in ('검토율', '출처12비율', '핵심원출처', '관련12본문', '참고원출처', '유용비율') else str(sc[k]))
@@ -2402,7 +2409,7 @@ def promote(path):
 
 
 EVAL_K = {'유용비율': '유용', 'FP': 'FP', 'OVER': 'OVER', 'UNDER': 'UNDER'}  # 보드 평가로 재는 지표 → 분자 칸
-RATIO_K = {'출처12비율': lambda l: mval(l, '핵심') + mval(l, '참고'), '핵심원출처': lambda l: mval(l, '핵심'),
+RATIO_K = {'출처12비율': lambda l: mval(l, '핵심') + mval(l, '참고') - (mval(l, '출처차단') or 0), '핵심원출처': lambda l: mval(l, '핵심'),  # c18: 출처12비율 분모는 차단 기사 뺌(옛 줄은 출처차단 없음 = 0)
            '관련12본문': lambda l: mval(l, '관련12건수')}  # metrics.md % 지표 → 분모(회차마다 분자=값×분모로 되살려 합산)
 HIGHER = {'유용비율', '출처12비율', '핵심원출처', '관련12본문', '참고원출처', '검토율', '핵심', '참고', '관련12건수'}  # 화살표 없을 때 기본 방향
 EFF = {'min_eval': 20, 'min_den': 20, 'band_pp': 10.0, 'min_events': 2, 'band_cnt': 1.0, 'win': 5, 'win_max': 10, 'grace': 3}  # improve.md 5번 판정 기준
